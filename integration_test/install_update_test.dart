@@ -26,7 +26,7 @@ void main() {
       markTestSkipped(
         'Pre-install $e2eTestPackageId with Obtainium as its installer '
         '(the runner does this); e.g. '
-        'adb install -r -i dev.imranr.obtainium.debug '
+        'adb install -r -i com.pt123123.obtainapk.debug '
         'build/e2e_assets/testapp-v1.apk',
       );
       return;

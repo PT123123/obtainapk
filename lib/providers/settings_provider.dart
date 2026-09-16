@@ -19,8 +19,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_storage/shared_storage.dart' as saf;
 
 const String obtainiumTempId = 'imranr98_obtainium_github.com';
-const String obtainiumId = 'dev.imranr.obtainium';
-const String obtainiumUrl = 'https://github.com/ImranR98/Obtainium';
+const String obtainiumId = 'com.pt123123.obtainapk';
+const String obtainiumUrl = 'https://github.com/PT123123/obtainapk';
 const Color obtainiumThemeColor = Color(0xFF6438B5);
 
 Locale? tryParseLocale(String? localeString) {
@@ -811,6 +811,54 @@ class SettingsProvider with ChangeNotifier {
 
   set parallelDownloads(bool val) {
     prefs?.setBool('parallelDownloads', val);
+    notifyListeners();
+  }
+
+  /// Download strategy: 'auto' (direct first, auto-fallback to mirrors on
+  /// failure), 'mirrorFirst' (try mirrors first), 'direct' (never use mirrors).
+  String get downloadStrategy {
+    return _getString('downloadStrategy') ?? 'auto';
+  }
+
+  set downloadStrategy(String val) {
+    prefs?.setString('downloadStrategy', val);
+    notifyListeners();
+  }
+
+  /// Comma/newline-separated list of GitHub download mirror prefixes
+  /// (host only, e.g. "ghfast.top,gh-proxy.com").
+  String get downloadMirrors {
+    return _getString('downloadMirrors') ??
+        'ghfast.top,gh-proxy.com,mirror.ghproxy.com';
+  }
+
+  set downloadMirrors(String val) {
+    prefs?.setString('downloadMirrors', val);
+    notifyListeners();
+  }
+
+  /// Parsed mirror list (normalized to "https://<host>/" form), ready for URL
+  /// rewriting.
+  List<String> get downloadMirrorsList {
+    final mirrors = <String>[];
+    for (final part in downloadMirrors.split(RegExp(r'[,\n]'))) {
+      var m = part.trim();
+      if (m.isEmpty) continue;
+      if (!m.startsWith('https://') && !m.startsWith('http://')) {
+        m = 'https://$m';
+      }
+      if (!m.endsWith('/')) m = '$m/';
+      mirrors.add(m);
+    }
+    return mirrors;
+  }
+
+  bool get keepDownloadedApks {
+    return _getBool('keepDownloadedApks') ?? false;
+  }
+
+  set keepDownloadedApks(bool val) {
+    prefs?.setBool('keepDownloadedApks', val);
     notifyListeners();
   }
 

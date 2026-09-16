@@ -271,7 +271,8 @@ class DownloadNotification extends ObtainiumNotification {
 }
 
 class DownloadedNotification extends ObtainiumNotification {
-  DownloadedNotification(String fileName, String downloadUrl, {super.appId})
+  DownloadedNotification(String fileName, String downloadUrl,
+      {super.appId, String? filePath})
     : super(
         notificationIdForKey(
           downloadUrl,
@@ -279,7 +280,9 @@ class DownloadedNotification extends ObtainiumNotification {
           downloadedNotificationIdRange,
         ),
         tr('downloadedX', args: [fileName]),
-        '',
+        filePath != null && filePath.isNotEmpty
+            ? tr('downloadedToPath', args: [filePath])
+            : '',
         'FILE_DOWNLOADED',
         tr('downloadedXNotifChannel', args: [tr('app')]),
         tr('downloadedX', args: [tr('app')]),

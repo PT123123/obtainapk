@@ -40,7 +40,7 @@ body:
     attributes:
       label: Screenshots and Logs
       description: |
-        If applicable, add screenshots, logs, and any other artifacts (like some/all files under `/Android/data/dev.imranr.obtainium/`) that you think may help troubleshoot the issue.
+        If applicable, add screenshots, logs, and any other artifacts (like some/all files under `/Android/data/com.pt123123.obtainapk/`) that you think may help troubleshoot the issue.
 
   - type: input
     id: device

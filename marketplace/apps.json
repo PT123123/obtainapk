@@ -1,0 +1,31 @@
+{
+    "schemaVersion": 2,
+    "exportedAt": "2026-09-17T00:00:00.000000",
+    "appVersion": "1.6.18",
+    "apps": [
+        {
+            "id": "com.pt123123.obtainapk",
+            "url": "https://github.com/PT123123/obtainapk",
+            "author": "PT123123",
+            "name": "ObtainAPK",
+            "additionalSettings": "{}",
+            "preferredApkIndex": 0
+        },
+        {
+            "id": "org.schabi.newpipe",
+            "url": "https://github.com/TeamNewPipe/NewPipe",
+            "author": "TeamNewPipe",
+            "name": "NewPipe",
+            "additionalSettings": "{}",
+            "preferredApkIndex": 0
+        },
+        {
+            "id": "com.beemdevelopment.aegis",
+            "url": "https://github.com/beemdevelopment/Aegis",
+            "author": "beemdevelopment",
+            "name": "Aegis Authenticator",
+            "additionalSettings": "{}",
+            "preferredApkIndex": 0
+        }
+    ]
+}

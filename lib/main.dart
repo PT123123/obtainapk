@@ -254,8 +254,8 @@ class _ObtainiumState extends State<Obtainium> {
                     App(
                       id: obtainiumId,
                       url: obtainiumUrl,
-                      author: 'ImranR98',
-                      name: 'Obtainium',
+                      author: 'PT123123',
+                      name: 'ObtainAPK',
                       installedVersion: value!.versionName,
                       latestVersion: value.versionName!,
                       apkUrls: [],
@@ -276,7 +276,7 @@ class _ObtainiumState extends State<Obtainium> {
               AppLogger.error(
                 err,
                 stackTrace: stack,
-                message: 'Failed to add Obtainium on first run',
+                message: 'Failed to add ObtainAPK on first run',
               );
             });
       }
