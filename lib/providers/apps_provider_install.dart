@@ -261,6 +261,8 @@ extension AppsProviderInstall on AppsProvider {
         additionalSettingsPlusSourceConfig,
         useExisting: useExisting,
         cancellationToken: cancellationToken,
+        mirrors: settingsProvider.downloadMirrorsList,
+        strategy: settingsProvider.downloadStrategy,
       );
       completedDownloads = 1;
       if (apps[app.id] != null) {
@@ -321,6 +323,8 @@ extension AppsProviderInstall on AppsProvider {
               useExisting: useExisting,
               headers: splitHeaders,
               cancellationToken: cancellationToken,
+              mirrors: settingsProvider.downloadMirrorsList,
+              strategy: settingsProvider.downloadStrategy,
             );
             if (splitFile.path.toLowerCase().endsWith('.apk')) {
               splitFile.renameSync(
@@ -411,6 +415,21 @@ extension AppsProviderInstall on AppsProvider {
             file.path != downloadedFile.path) {
           unawaited(file.delete(recursive: true));
         }
+      }
+      // When "keep downloaded APKs" is on, tell the user where the file landed
+      // right after the download completes (the install below would otherwise
+      // consume and delete it without any trace).
+      if (settingsProvider.keepDownloadedApks) {
+        unawaited(
+          notificationsProvider?.notify(
+            DownloadedNotification(
+              downloadedFile.path.split('/').last,
+              resolvedAppId,
+              appId: resolvedAppId,
+              filePath: downloadedFile.path,
+            ),
+          ),
+        );
       }
       if (isAPK && !multipleApks) {
         return DownloadedApk(resolvedAppId, downloadedFile);
@@ -660,6 +679,7 @@ extension AppsProviderInstall on AppsProvider {
     bool needsBGWorkaround = false,
     Map<String, dynamic> installOptions = const {},
     List<DownloadedApk> additionalAPKs = const [],
+    NotificationsProvider? notificationsProvider,
   }) async {
     if (firstTimeWithContext != null) {
       await _shareWithVerifiedApps(file, firstTimeWithContext);
@@ -744,7 +764,24 @@ extension AppsProviderInstall on AppsProvider {
       apps[file.appId]!.app = apps[file.appId]!.app.copyWith(
         installedVersion: apps[file.appId]!.app.latestVersion,
       );
-      unawaited(file.file.delete(recursive: true));
+      if (settingsProvider.keepDownloadedApks) {
+        // Keep a copy in a user-visible location instead of deleting it, and
+        // tell the user exactly where it was saved.
+        final keptPath = (await _keepApkFile(file.file, file.appId))?.path ??
+            file.file.path;
+        unawaited(
+          notificationsProvider?.notify(
+            DownloadedNotification(
+              file.file.path.split('/').last,
+              file.appId,
+              appId: file.appId,
+              filePath: keptPath,
+            ),
+          ),
+        );
+      } else {
+        unawaited(file.file.delete(recursive: true));
+      }
       if (!isBg) settingsProvider.heavyImpact();
     }
     // Cancelled or already-installed/pending: keep the file so a retry can
@@ -851,6 +888,30 @@ extension AppsProviderInstall on AppsProvider {
       return '/${(await getAppStorageDir()).uri.pathSegments.sublist(0, 3).join('/')}';
     } catch (_) {
       return '/storage/emulated/0';
+    }
+  }
+
+  /// Copies [file] to a user-visible location (`Download/Obtainium`) when
+  /// "keep downloaded APKs" is enabled. Returns the kept file, or null when the
+  /// copy fails (the caller then keeps the file where it already is).
+  Future<File?> _keepApkFile(File file, String appId) async {
+    try {
+      final String destDirPath =
+          '${await getStorageRootPath()}/Download/Obtainium';
+      await Directory(destDirPath).create(recursive: true);
+      final destFile = File('$destDirPath/${file.path.split('/').last}');
+      if (!destFile.existsSync()) {
+        await file.copy(destFile.path);
+      }
+      AppLogger.info(
+        'Kept downloaded APK for $appId at ${destFile.path}',
+      );
+      return destFile;
+    } catch (e) {
+      AppLogger.warn(
+        'Failed to copy kept APK for $appId to public Downloads: ${e.toString()}',
+      );
+      return null;
     }
   }
 
@@ -1512,6 +1573,7 @@ extension AppsProviderInstall on AppsProvider {
               installOptions: {
                 'shizukuPretendToBeGooglePlay': shizukuPretendToBeGooglePlay,
               },
+              notificationsProvider: notificationsProvider,
             ),
             failureLogPrefix: 'Background install threw for $id',
           );
@@ -1527,6 +1589,7 @@ extension AppsProviderInstall on AppsProvider {
             installOptions: {
               'shizukuPretendToBeGooglePlay': shizukuPretendToBeGooglePlay,
             },
+            notificationsProvider: notificationsProvider,
           );
         }
       } else {
@@ -1673,7 +1736,7 @@ extension AppsProviderInstall on AppsProvider {
       ).id;
       try {
         final String downloadPath = '${await getStorageRootPath()}/Download';
-        await downloadFileWithRetry(
+        final File downloadedFile = await downloadFileWithRetry(
           fileName,
           true,
           (double? progress, [int? received, int? total]) {
@@ -1699,10 +1762,17 @@ extension AppsProviderInstall on AppsProvider {
                 forAPKDownload: AppSource.isApkOrContainerFile(fileName),
               ),
           useExisting: false,
+          mirrors: settingsProvider.downloadMirrorsList,
+          strategy: settingsProvider.downloadStrategy,
         );
         unawaited(
           notificationsProvider.notify(
-            DownloadedNotification(fileName, url, appId: app.id),
+            DownloadedNotification(
+              fileName,
+              url,
+              appId: app.id,
+              filePath: downloadedFile.path,
+            ),
           ),
         );
         downloadedIds.add(fileName);

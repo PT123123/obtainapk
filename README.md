@@ -7,6 +7,22 @@ Get Android app updates straight from the source.
 
 Obtainium allows you to install and update apps directly from their releases pages, and receive notifications when new releases are made available.
 
+## ObtainAPK (this fork)
+
+This is a customized fork of Obtainium published as **ObtainAPK** (package ID `com.pt123123.obtainapk`), tailored for users in regions where direct access to GitHub is unstable. Changes on top of upstream:
+
+- **Mirror download fallback**: when the direct HTTPS download fails, the app automatically retries the same APK through configurable acceleration mirrors (`ghfast.top`, `gh-proxy.com`, `mirror.ghproxy.com` by default). Pick a strategy under *Settings → Download strategy*: `Direct first, fall back to mirrors` (default), `Mirrors first`, or `Direct only`. Note: GitHub Release assets cannot be downloaded over SSH (SSH only works for `git` operations), which is why mirrors are used instead.
+- **Keep downloaded APKs**: enable *Settings → Keep downloaded APKs* to keep each APK after a successful install in the public `Download/Obtainium` folder instead of silently deleting it. Download notifications also show the exact file path.
+- **Manually maintained app list**: the [`marketplace/apps.json`](./marketplace/apps.json) file holds the app configurations this marketplace offers.
+
+### Using the marketplace list
+
+1. Download [`marketplace/apps.json`](https://github.com/PT123123/obtainapk/raw/main/marketplace/apps.json) to your device.
+2. Open ObtainAPK → *Settings → Import/Export → Obtainium Import*, pick the file, and confirm the overwrite dialog.
+3. Or add a single app by sharing its GitHub/other source URL into ObtainAPK (e.g. from a browser).
+
+To add a new app to the marketplace, edit `marketplace/apps.json` following the entries already present (an `id` plus the source `url`, `author`, `name` and `additionalSettings` is enough) and push the change.
+
 More info:
 - [Obtainium Wiki](https://wiki.obtainium.imranr.dev/) ([repository](https://github.com/ImranR98/Obtainium-Wiki))
 - [Deep Links](https://wiki.obtainium.imranr.dev/deep_links/) - link straight to an import, or add a badge to your own project
@@ -62,17 +78,11 @@ Or, contribute some configurations to the website by creating a PR at [this repo
 
 [<img src="https://github.com/machiav3lli/oandbackupx/blob/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png"
     alt="Get it on GitHub"
-    height="80">](https://github.com/ImranR98/Obtainium/releases)
-[<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png"
-     alt="Get it on IzzyOnDroid"
-     height="80">](https://apt.izzysoft.de/fdroid/index/apk/dev.imranr.obtainium)
-[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"
-    alt="Get it on F-Droid"
-    height="80">](https://f-droid.org/packages/dev.imranr.obtainium.fdroid/)
+    height="80">](https://github.com/PT123123/obtainapk/releases)
      
 Verification info:
 
-- Package ID: `dev.imranr.obtainium`
+- Package ID: `com.pt123123.obtainapk`
 - SHA-256 hash of signing certificate:
   ```text
   B3:53:60:1F:6A:1D:5F:D6:60:3A:E2:F5:0B:E8:0C:F3:01:36:7B:86:B6:AB:8B:1F:66:24:3D:A9:6C:D5:73:62

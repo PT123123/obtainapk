@@ -179,6 +179,89 @@ Future<File> downloadFileWithRetry(
   Map<String, String>? headers,
   int retries = _defaultRetries,
   CancellationToken? cancellationToken,
+  List<String> mirrors = const [],
+  String strategy = 'auto',
+}) async {
+  final directUrl = additionalSettings['url'] as String? ?? '';
+  final mirrorUrls = <String>[];
+  if (strategy != 'direct') {
+    // A mirror rewrites the original HTTPS URL as
+    // "https://<mirror-host>/<original-url>", e.g.
+    // "https://ghfast.top/https://github.com/owner/repo/releases/download/...".
+    for (final m in mirrors) {
+      if (m.isEmpty || !directUrl.startsWith('https://')) continue;
+      final candidate = '$m$directUrl';
+      if (candidate != directUrl) mirrorUrls.add(candidate);
+    }
+  }
+  // No mirrors configured: keep the original same-URL retry loop.
+  if (mirrorUrls.isEmpty) {
+    return _downloadFileWithRetrySingleUrl(
+      fileName,
+      fileNameHasExt,
+      onProgress,
+      destDir,
+      additionalSettings,
+      useExisting: useExisting,
+      headers: headers,
+      retries: retries,
+      cancellationToken: cancellationToken,
+    );
+  }
+  // Fail over across the candidate URLs (direct + mirrors) on retryable
+  // errors. mirrorFirst tries mirrors before the direct URL.
+  final urlQueue = strategy == 'mirrorFirst'
+      ? [...mirrorUrls, directUrl]
+      : [directUrl, ...mirrorUrls];
+  Object? lastError;
+  for (final url in urlQueue) {
+    final settings = url == directUrl
+        ? additionalSettings
+        : Map<String, dynamic>.from(additionalSettings)..['url'] = url;
+    try {
+      return await downloadFile(
+        fileName,
+        fileNameHasExt,
+        onProgress,
+        destDir,
+        settings,
+        useExisting: useExisting,
+        headers: headers,
+        cancellationToken: cancellationToken,
+      );
+    } catch (e) {
+      if (e is CancellationException) rethrow;
+      final bool retryable =
+          (e is HTTPStatusError && (e.statusCode == 429 || e.statusCode >= 500)) ||
+          e is ClientException ||
+          e is SocketException ||
+          e is TimeoutException ||
+          e is HttpException;
+      if (!retryable) rethrow;
+      lastError = e;
+      AppLogger.warn(
+        'Download failed via $url, trying next mirror: ${e.toString()}',
+      );
+      await Future.delayed(const Duration(seconds: _retryDelaySeconds));
+    }
+  }
+  throw lastError ?? ObtainiumError(tr('downloadFailed'));
+}
+
+/// Retries a download of the same URL up to [retries] times (the original
+/// Obtainium behavior, kept for when no mirrors are configured). A cancellation
+/// is not retryable. 429/5xx responses are transient and are retried like
+/// transport failures.
+Future<File> _downloadFileWithRetrySingleUrl(
+  String fileName,
+  bool fileNameHasExt,
+  Function? onProgress,
+  String destDir,
+  Map<String, dynamic> additionalSettings, {
+  bool useExisting = true,
+  Map<String, String>? headers,
+  int retries = _defaultRetries,
+  CancellationToken? cancellationToken,
 }) async {
   try {
     return await downloadFile(
@@ -192,9 +275,6 @@ Future<File> downloadFileWithRetry(
       cancellationToken: cancellationToken,
     );
   } catch (e) {
-    // A cancellation is not one of the retryable error types, so it naturally
-    // falls through to rethrow below. 429/5xx responses are transient and
-    // should be retried like transport failures.
     final bool retryableHTTPError =
         e is HTTPStatusError && (e.statusCode == 429 || e.statusCode >= 500);
     if (retries > 0 &&
@@ -204,7 +284,7 @@ Future<File> downloadFileWithRetry(
             e is HttpException ||
             retryableHTTPError)) {
       await Future.delayed(const Duration(seconds: _retryDelaySeconds));
-      return await downloadFileWithRetry(
+      return await _downloadFileWithRetrySingleUrl(
         fileName,
         fileNameHasExt,
         onProgress,

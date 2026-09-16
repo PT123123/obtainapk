@@ -150,7 +150,7 @@ reset_install_targets() {
     "$ADB" -s "$DEV" uninstall "$pkg" >/dev/null 2>&1 || true
   done
   for apk in testapp-v1.apk testapp2-v1.apk; do
-    if ! "$ADB" -s "$DEV" install -r -i dev.imranr.obtainium.debug \
+    if ! "$ADB" -s "$DEV" install -r -i com.pt123123.obtainapk.debug \
       "$REPO_DIR/build/e2e_assets/$apk" >/dev/null; then
       echo "Failed to pre-install $apk with Obtainium as installer" >&2
       exit 1

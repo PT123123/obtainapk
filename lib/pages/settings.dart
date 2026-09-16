@@ -610,6 +610,59 @@ class _SettingsPageState extends State<SettingsPage> {
         value: settingsProvider.parallelDownloads,
         onChanged: (value) => settingsProvider.parallelDownloads = value,
       ),
+      _fieldTile(
+        context,
+        TvDropdownMenu<String>(
+          expandedInsets: EdgeInsets.zero,
+          label: Text(tr('downloadStrategy')),
+          initialSelection: settingsProvider.downloadStrategy,
+          dropdownMenuEntries: [
+            DropdownMenuEntry(
+              value: 'auto',
+              label: tr('downloadStrategyAuto'),
+            ),
+            DropdownMenuEntry(
+              value: 'mirrorFirst',
+              label: tr('downloadStrategyMirrorFirst'),
+            ),
+            DropdownMenuEntry(
+              value: 'direct',
+              label: tr('downloadStrategyDirect'),
+            ),
+          ],
+          onSelected: (value) {
+            if (value != null) {
+              settingsProvider.downloadStrategy = value;
+            }
+          },
+        ),
+      ),
+      ConnectedCard(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: GeneratedForm(
+          tileMode: true,
+          items: [
+            [
+              GeneratedFormTextField(
+                'downloadMirrors',
+                label: tr('downloadMirrors'),
+                required: false,
+              )..value = settingsProvider.downloadMirrors,
+            ],
+          ],
+          onValueChanges: (values, valid, isBuilding) {
+            if (valid && !isBuilding) {
+              settingsProvider.downloadMirrors = values['downloadMirrors'];
+            }
+          },
+        ),
+      ),
+      ToggleTile(
+        label: tr('keepDownloadedApks'),
+        value: settingsProvider.keepDownloadedApks,
+        onChanged: (value) => settingsProvider.keepDownloadedApks = value,
+        helpWidgets: [Text(tr('keepDownloadedApksHelp'))],
+      ),
       ToggleTile(
         label: tr('beforeNewInstallsShareToAppVerifier'),
         value: settingsProvider.beforeNewInstallsShareToAppVerifier,

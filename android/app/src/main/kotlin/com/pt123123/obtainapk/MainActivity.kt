@@ -1,6 +1,6 @@
 // External-installer completion tracking includes code and research adapted from ObtainX by Bikram Agarwal (@bikram-agarwal).
 
-package dev.imranr.obtainium
+package com.pt123123.obtainapk
 
 import android.app.Activity
 import android.content.BroadcastReceiver
@@ -26,7 +26,7 @@ import java.io.File
  */
 class MainActivity : FlutterActivity() {
     private companion object {
-        const val EXTERNAL_INSTALL_CHANNEL = "dev.imranr.obtainium/external_install"
+        const val EXTERNAL_INSTALL_CHANNEL = "com.pt123123.obtainapk/external_install"
         const val APK_MIME = "application/vnd.android.package-archive"
 
         /** Request code for tracked external-installer launches. */
@@ -304,7 +304,7 @@ class MainActivity : FlutterActivity() {
      */
     private fun listInstallTargets(): List<Map<String, String>> {
         val targets = ArrayList<Map<String, String>>()
-        val probe = Uri.parse("content://dev.imranr.obtainium.probe/sample.apk")
+        val probe = Uri.parse("content://com.pt123123.obtainapk.probe/sample.apk")
         val actions = listOf(Intent.ACTION_VIEW, Intent.ACTION_INSTALL_PACKAGE)
         for (action in actions) {
             @Suppress("DEPRECATION")
