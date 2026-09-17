@@ -54,15 +54,15 @@ String installErrorCodeToMessage(int code) {
     case -3:
       return '安装被中止：你在系统弹窗中取消了安装，或系统拦截了本次安装';
     case -4:
-      return '安装被系统拦截：MIUI/澎湃OS 请允许「安装未知应用」，并在 系统设置→更多设置→系统安全 中关闭「纯净模式」';
+      return '安装被系统拦截：MIUI/澎湃OS 请允许「安装未知应用」，并关闭「纯净模式」；也可能是存储空间不足';
     case -5:
       return '与已安装应用冲突（签名不一致），请先卸载旧版本再安装';
     case -6:
       return 'APK 文件无效或已损坏，请重新下载';
     case -7:
-      return '此 APK 与当前设备或系统版本不兼容';
+      return '与设备不兼容，或与已安装版本签名冲突（INSTALL_FAILED_UPDATE_INCOMPATIBLE，请先卸载旧版本）';
     case -8:
-      return '存储空间不足，请清理后重试';
+      return '存储空间不足，或共享用户 ID 不兼容，请清理后重试';
     case -9:
       return '安装超时，请重试';
     default:
