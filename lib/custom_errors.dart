@@ -177,7 +177,7 @@ class InstallError extends ObtainiumError {
         'INSTALL_FAILED',
         data: {
           'errorCode': code,
-          'message': PackageInstallerStatus.byCode(code).name,
+          'message': 'Install error code $code',
         },
       );
 }

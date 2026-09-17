@@ -55,5 +55,10 @@ TODO.txt
 data
 node_modules/
 
+# Signing secrets — never commit these, they contain real keys/passwords.
+android/key.properties
+android/*.jks
+android/*.keystore
+
 # FVM Version Cache
 .fvm/

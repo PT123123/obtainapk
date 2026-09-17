@@ -758,6 +758,12 @@ extension AppsProviderInstall on AppsProvider {
           'Failed to delete APK after failed install: ${e.toString()}',
         );
       }
+      unawaited(
+        Fluttertoast.showToast(
+          msg: '${tr('installFailed')} (code ${result.errorCode})',
+          toastLength: Toast.LENGTH_LONG,
+        ),
+      );
       throw InstallError(result.errorCode!);
     } else if (result.isSuccess) {
       installed = true;
@@ -1635,6 +1641,16 @@ extension AppsProviderInstall on AppsProvider {
             ),
           );
         }
+      } else if (!sayInstalled && context != null) {
+        // Foreground install did not complete — most likely the user cancelled
+        // at the system prompt. Surface a toast so the silent path isn't
+        // completely opaque (#install-no-feedback).
+        unawaited(
+          Fluttertoast.showToast(
+            msg: tr('installFailedOrCancelled'),
+            toastLength: Toast.LENGTH_LONG,
+          ),
+        );
       }
       if (sayInstalled) {
         installedIds.add(id);

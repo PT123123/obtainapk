@@ -81,7 +81,7 @@ class StockInstaller extends Installer {
   @override
   Future<void> ensurePermission() async {
     if (!(await settingsProvider.getInstallPermission(enforce: false))) {
-      throw ObtainiumError(tr('cancelled'));
+      throw ObtainiumError(tr('installPermissionNotGranted'));
     }
   }
 
