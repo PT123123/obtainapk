@@ -45,6 +45,86 @@ class InstallResult {
   bool get isError => outcome == InstallOutcome.error;
 }
 
+/// Human-readable Chinese description of a known Android PackageInstaller
+/// error code. Falls back to a generic message carrying the raw code for
+/// unknown values so the user still sees something useful.
+String installErrorCodeToMessage(int code) {
+  switch (code) {
+    case -1:
+      return 'APK 文件无效';
+    case -2:
+      return 'APK 文件损坏或格式不兼容';
+    case -3:
+      return '安装包中的 Provider 与现有应用冲突';
+    case -4:
+      return '无法解析安装包路径';
+    case -5:
+      return '缺少所需的共享库';
+    case -6:
+      return '替换现有应用时失败（无法删除旧版本）';
+    case -7:
+      return 'APK 优化 (dexopt) 失败，文件可能不完整';
+    case -8:
+      return '签名不匹配！请先卸载旧版本，或使用相同签名重新打包';
+    case -9:
+      return '共享用户 ID 不兼容';
+    case -10:
+      return '设备缺少此应用需要的功能（API/硬件）';
+    case -11:
+      return '存储容器错误（可能是内部存储问题）';
+    case -12:
+      return '存储空间不足，请清理后重试';
+    case -13:
+      return '已存在同名应用';
+    case -14:
+      return '此 APK 要求更高版本的 Android';
+    case -15:
+      return 'APK 与当前 Android 版本不兼容';
+    case -16:
+      return 'APK 完整性校验失败（可能被篡改或下载不完整）';
+    case -17:
+      return '应用包名或签名与之前安装的版本不同';
+    case -18:
+      return '安装被中途取消';
+    case -100:
+      return '内部安装器错误';
+    case -101:
+      return '存储空间不足';
+    case -102:
+      return '应用已被删除';
+    case -103:
+      return 'APK 过大，无法安装';
+    case -104:
+      return '安装参数无效';
+    case -105:
+      return '版本号格式无效';
+    case -106:
+      return '版本不兼容';
+    case -107:
+      return '无法降级安装，请先卸载旧版本';
+    case -108:
+      return 'APK 签名无效或损坏';
+    case -109:
+      return '缺少共享用户 ID';
+    case -110:
+      return '此 APK 是测试版，不允许正式安装';
+    case -111:
+      return 'CPU 架构不匹配（APK 不支持当前设备的 CPU 架构）';
+    case -112:
+      return '安装器内部错误';
+    case -113:
+      return '用户或设备策略禁止安装此应用';
+    case -114:
+      return 'APK 压缩包损坏';
+    case -115:
+      return '订阅安装不被允许';
+    case -116:
+      return '此设备不支持安装此应用';
+    default:
+      return '安装失败 (code $code)';
+  }
+}
+
 /// Strategy that performs the platform-specific parts of an app installation.
 ///
 /// Implementations are intentionally thin: the surrounding harness in

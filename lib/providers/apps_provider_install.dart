@@ -760,7 +760,7 @@ extension AppsProviderInstall on AppsProvider {
       }
       unawaited(
         Fluttertoast.showToast(
-          msg: '${tr('installFailed')} (code ${result.errorCode})',
+          msg: installErrorCodeToMessage(result.errorCode!),
           toastLength: Toast.LENGTH_LONG,
         ),
       );
