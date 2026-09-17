@@ -292,6 +292,26 @@ class _ObtainiumState extends State<Obtainium> {
             });
       }
     }
+    // One-time import of the bundled marketplace defaults
+    // (marketplace/apps.json). Flag-based so it runs for fresh installs AND
+    // upgrades of existing installs, but never re-adds apps the user
+    // deleted afterwards.
+    if (settings.prefs?.getBool('marketplaceDefaultsImported') != true) {
+      unawaited(() async {
+        try {
+          final bundled = await rootBundle.loadString('marketplace/apps.json');
+          await apps.import(bundled);
+          await settings.prefs?.setBool('marketplaceDefaultsImported', true);
+          AppLogger.info('Imported bundled marketplace defaults.');
+        } catch (e, stack) {
+          AppLogger.error(
+            e,
+            stackTrace: stack,
+            message: 'Failed to import bundled marketplace defaults',
+          );
+        }
+      }());
+    }
     final currentLang = context.locale.languageCode;
     final deviceLang = context.deviceLocale.languageCode;
     if (!supportedLocaleSet.contains(context.locale) ||

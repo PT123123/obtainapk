@@ -97,6 +97,7 @@ flutter:
     - assets/translations/
     - assets/graphics/
     - assets/ca-certs/
+    - marketplace/apps.json
 
   fonts:
       - family: Montserrat
