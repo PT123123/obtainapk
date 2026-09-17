@@ -4,14 +4,6 @@
     "appVersion": "1.6.18",
     "apps": [
         {
-            "id": "com.pt123123.obtainapk",
-            "url": "https://github.com/PT123123/obtainapk",
-            "author": "PT123123",
-            "name": "ObtainAPK",
-            "additionalSettings": "{}",
-            "preferredApkIndex": 0
-        },
-        {
             "id": "org.schabi.newpipe",
             "url": "https://github.com/TeamNewPipe/NewPipe",
             "author": "TeamNewPipe",
