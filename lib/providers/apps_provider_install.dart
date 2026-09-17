@@ -736,18 +736,24 @@ extension AppsProviderInstall on AppsProvider {
     final allAPKs = [file.file.path];
     allAPKs.addAll(additionalAPKs.map((a) => a.file.path));
     final installer = getInstaller();
+    // Foreground installs show the system confirmation dialog (MIUI/HyperOS
+    // aborts silent sessions outright); background auto-updates stay silent.
+    final opts = {
+      ...installOptions,
+      'silent': needsBGWorkaround || !isForeground,
+    };
     final InstallResult result =
         needsBGWorkaround || installer.modeKey != 'stock'
         ? await installer.installApk(
             allAPKs,
             appId: file.appId,
-            installOptions: installOptions,
+            installOptions: opts,
           )
         : await _installWithPollConfirmation(
             installer,
             allAPKs,
             file.appId,
-            installOptions,
+            opts,
           );
     bool installed = false;
     if (result.isError) {

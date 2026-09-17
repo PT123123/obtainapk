@@ -2,7 +2,7 @@ name: obtainium
 description: Get Android app updates straight from the source.
 publish_to: 'none'
 
-version: 1.6.21+2360
+version: 1.6.22+2361
 
 environment:
   sdk: ^3.12.0
@@ -30,10 +30,8 @@ dependencies:
   device_info_plus: ^13.2.0
   file_picker: ^12.3.0
   animations: ^3.0.0
-  android_package_installer: # TODO: Upstream PR pending; if not accepted, keep fork maintained
-    git:
-      url: https://github.com/ImranR98/android_package_installer
-      ref: 94525707bd1fba8cba4d19b4cb2b928580913510
+  android_package_installer: # Vendored fork: silent flag added for MIUI/HyperOS (silent sessions get aborted there)
+    path: plugins/android_package_installer
   android_package_manager: # TODO: Submit PR to upstream and switch back when merged
     git:
       url: https://github.com/ImranR98/android_package_manager
