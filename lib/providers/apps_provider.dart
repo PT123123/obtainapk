@@ -804,24 +804,35 @@ String? realInstalledVersionOf(App app, PackageInfo? installedInfo) {
 }
 
 Future<Directory> getAppStorageDir() async {
-  // Use public storage /storage/emulated/0/Obtainium so the app list,
-  // icon cache and APK cache SURVIVE an uninstall + reinstall.
-  // App-private directories (getApplicationDocumentsDirectory /
-  // getExternalStorageDirectory) are wiped on uninstall. requestLegacyExternalStorage
-  // in AndroidManifest grants direct access to the shared storage root.
+  // Prefer public storage /storage/emulated/0/Obtainium so the app list,
+  // icon cache and APK cache SURVIVE an uninstall + reinstall. Direct access
+  // needs "All files access" (MANAGE_EXTERNAL_STORAGE) on Android 11+;
+  // requestLegacyExternalStorage only covers Android 10. If the permission
+  // isn't granted (create throws errno 13), fall back to app-specific dirs
+  // so the app keeps working — data just won't survive an uninstall there.
   final public = Directory('/storage/emulated/0/Obtainium');
-  final created = !public.existsSync();
-  if (created) {
+  try {
+    final created = !public.existsSync();
     public.createSync(recursive: true);
+    if (created) {
+      // Migrate existing user data from the old app-private storage paths
+      // (Android/data/pkg/files or data/data/pkg) the first time this
+      // public directory is created, so existing users don't lose their
+      // library on upgrade.
+      unawaited(_migrateFromOldStorage(public));
+    }
+    return public;
+  } catch (_) {
+    // Public storage not accessible — fall back to private dirs.
+    try {
+      final ext = await getExternalStorageDirectory();
+      if (ext != null) {
+        ext.createSync(recursive: true);
+        return ext;
+      }
+    } catch (_) {}
+    return await getApplicationDocumentsDirectory();
   }
-  // Migrate existing user data from the old app-private storage paths
-  // (Android/data/pkg/files or data/data/pkg) the first time this public
-  // directory is used. Apps, icons and APK caches get copied over so
-  // existing users don't lose their library on upgrade.
-  if (created) {
-    unawaited(_migrateFromOldStorage(public));
-  }
-  return public;
 }
 
 /// One-shot migration: copies app_data/, icons/, apks/ from whichever old
