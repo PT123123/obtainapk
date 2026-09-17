@@ -84,6 +84,65 @@ extension AppsProviderLifecycle on AppsProvider {
     return cachedAppsDir = appsDir;
   }
 
+  /// Private mirror of the app JSON files (inside app-scoped storage). If the
+  /// active apps directory IS this mirror, returns null (nothing to mirror).
+  Future<Directory?> appsMirrorDir(Directory active) async {
+    try {
+      final mirror = Directory(
+        '${(await getApplicationDocumentsDirectory()).path}/app_data',
+      );
+      if (mirror.path == active.path) return null;
+      if (!mirror.existsSync()) mirror.createSync(recursive: true);
+      return mirror;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// If the active app_data directory contains no app JSON files but another
+  /// known location does (public/private fallback flips, a failed one-shot
+  /// migration, or external cleanup of the public folder), copy the apps
+  /// over so the user's list is not lost. No-op when the dir is populated.
+  Future<void> _healAppsDir(Directory active) async {
+    try {
+      final hasApps = active
+          .listSync()
+          .whereType<File>()
+          .any((f) => f.path.toLowerCase().endsWith('.json'));
+      if (hasApps) return;
+      final candidates = <Directory>[];
+      if (Platform.isAndroid) {
+        try {
+          final ext = await getExternalStorageDirectory();
+          if (ext != null) candidates.add(Directory('${ext.path}/app_data'));
+        } catch (_) {}
+      }
+      final mirror = await appsMirrorDir(active);
+      if (mirror != null) candidates.add(mirror);
+      final public = Directory('/storage/emulated/0/Obtainium/app_data');
+      if (public.path != active.path) candidates.add(public);
+      for (final cand in candidates) {
+        if (cand.path == active.path || !cand.existsSync()) continue;
+        final jsons = cand
+            .listSync()
+            .whereType<File>()
+            .where((f) => f.path.toLowerCase().endsWith('.json'))
+            .toList();
+        if (jsons.isEmpty) continue;
+        if (!active.existsSync()) active.createSync(recursive: true);
+        for (final f in jsons) {
+          await f.copy('${active.path}/${f.uri.pathSegments.last}');
+        }
+        AppLogger.info(
+          'Healed empty apps dir from ${cand.path} (${jsons.length} apps).',
+        );
+        break;
+      }
+    } catch (e) {
+      AppLogger.warn('Apps dir heal failed: ${e.toString()}');
+    }
+  }
+
   /// Writes [app]'s JSON file, re-resolving the apps directory and retrying
   /// once if the filesystem reports a missing path. Without the retry, a
   /// directory that vanished between the existence check and the rename makes
@@ -95,8 +154,19 @@ extension AppsProviderLifecycle on AppsProvider {
       // interleave writes or race each other's rename. #2089
       final String tmpPath =
           '$filePath.${DateTime.now().microsecondsSinceEpoch}-${_saveTempCounter++}.tmp';
-      await File(tmpPath).writeAsString(jsonEncode(app.toJson()));
+      final String json = jsonEncode(app.toJson());
+      await File(tmpPath).writeAsString(json);
       await File(tmpPath).rename(filePath);
+      // Keep the private mirror in sync so the app list survives the active
+      // directory being wiped externally (system cleanup, permission
+      // fallback flips). Best-effort; never fail the real save for it.
+      try {
+        final active = await getAppsDir();
+        final mirror = await appsMirrorDir(active);
+        if (mirror != null) {
+          await File('${mirror.path}/${app.id}.json').writeAsString(json);
+        }
+      } catch (_) {}
     }
 
     try {
@@ -203,9 +273,11 @@ extension AppsProviderLifecycle on AppsProvider {
       };
       final List<String> removedAppIds = [];
       final List<App> correctedApps = [];
+      // TODO: Replace listSync() with async list().toList()
+      final activeAppsDir = await getAppsDir();
+      await _healAppsDir(activeAppsDir);
       await Future.wait(
-        // TODO: Replace listSync() with async list().toList()
-        (await getAppsDir()) // Parse Apps from JSON
+        activeAppsDir // Parse Apps from JSON
             .listSync()
             .map((item) async {
               App? app;
@@ -427,10 +499,19 @@ extension AppsProviderLifecycle on AppsProvider {
     final apkFiles = await apkDir.list().toList();
     await Future.wait(
       appIds.map((appId) async {
-        final File file = File('${(await getAppsDir()).path}/$appId.json');
+        final activeDir = await getAppsDir();
+        final File file = File('${activeDir.path}/$appId.json');
         if (file.existsSync()) {
           deleteFile(file);
         }
+        // Also drop the mirror copy so a heal can't resurrect removed apps.
+        try {
+          final mirror = await appsMirrorDir(activeDir);
+          if (mirror != null) {
+            final mf = File('${mirror.path}/$appId.json');
+            if (mf.existsSync()) mf.deleteSync();
+          }
+        } catch (_) {}
         await Future.wait(
           apkFiles
               .where(
