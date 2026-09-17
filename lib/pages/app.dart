@@ -1261,6 +1261,15 @@ class _AppPageState extends State<AppPage> {
                 trackOnly,
               ),
               const Spacer(),
+              if (app?.app.installedVersion != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: OutlinedButton.icon(
+                    onPressed: () => packageManager.openApp(app!.app.id),
+                    icon: const Icon(Icons.launch),
+                    label: const Text('Open'),
+                  ),
+                ),
               _getPrimaryButton(context, app, areDownloadsRunning),
             ],
           ),

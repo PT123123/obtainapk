@@ -218,9 +218,13 @@ class SourceProvider {
     bool trackOnlyOverride = false,
     bool sourceIsOverriden = false,
     bool inferAppIdIfOptional = false,
+    bool allowNoRelease = false,
   }) async {
     additionalSettings = Map<String, dynamic>.from(additionalSettings);
     if (trackOnlyOverride || source.enforceTrackOnly) {
+      additionalSettings['trackOnly'] = true;
+    }
+    if (allowNoRelease) {
       additionalSettings['trackOnly'] = true;
     }
     final trackOnly = additionalSettings['trackOnly'] == true;
@@ -233,6 +237,28 @@ class SourceProvider {
     APKDetails apk;
     try {
       apk = await source.getLatestAPKDetails(standardUrl, additionalSettings);
+    } on NoReleasesError catch (e) {
+      if (allowNoRelease) {
+        return _noReleaseApp(
+          source,
+          standardUrl,
+          additionalSettings,
+          currentApp,
+          inferAppIdIfOptional,
+        );
+      }
+      throw e..withUrlContext(standardUrl);
+    } on NoVersionError catch (e) {
+      if (allowNoRelease) {
+        return _noReleaseApp(
+          source,
+          standardUrl,
+          additionalSettings,
+          currentApp,
+          inferAppIdIfOptional,
+        );
+      }
+      throw e..withUrlContext(standardUrl);
     } on ObtainiumError catch (e) {
       throw e..withUrlContext(standardUrl);
     }
@@ -324,6 +350,49 @@ class SourceProvider {
     return source.postProcessApp(finalApp);
   }
 
+  /// Builds a minimal track-only [App] for sources that have no installable
+  /// release yet, so they can still be added and tracked (the user asked to be
+  /// able to add a source even when there is no release version).
+  App _noReleaseApp(
+    AppSource source,
+    String standardUrl,
+    Map<String, dynamic> additionalSettings,
+    App? currentApp,
+    bool inferAppIdIfOptional,
+  ) {
+    final bool trackOnly = additionalSettings['trackOnly'] == true;
+    String name = standardUrl;
+    String author = '';
+    try {
+      final uri = Uri.parse(standardUrl);
+      final segs = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+      if (segs.isNotEmpty) {
+        name = segs.last;
+        if (segs.length > 1) author = segs[segs.length - 2];
+      }
+    } catch (_) {
+      // keep defaults
+    }
+    if (currentApp != null && currentApp.name.trim().isNotEmpty) {
+      name = currentApp.name.trim();
+    }
+    return App(
+      id: generateTempID(standardUrl, additionalSettings),
+      url: standardUrl,
+      author: author,
+      name: name,
+      latestVersion: tr('unknown'),
+      apkUrls: const [],
+      preferredApkIndex: 0,
+      additionalSettings: additionalSettings,
+      lastUpdateCheck: DateTime.now(),
+      pinned: currentApp?.pinned ?? false,
+      categories: currentApp?.categories ?? const [],
+      allowIdChange:
+          trackOnly || (source.appIdInferIsOptional && inferAppIdIfOptional),
+    );
+  }
+
   // Returns errors in [results, errors] instead of throwing them
   Future<List<dynamic>> getAppsByURLNaive(
     List<String> urls, {
@@ -350,6 +419,7 @@ class SourceProvider {
               getDefaultValuesFromFormItems(
                 source.combinedAppSpecificSettingFormItems,
               ),
+              allowNoRelease: true,
             );
           } catch (e) {
             return e;
