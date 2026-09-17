@@ -751,13 +751,8 @@ extension AppsProviderInstall on AppsProvider {
           );
     bool installed = false;
     if (result.isError) {
-      try {
-        deleteFile(file.file);
-      } catch (e) {
-        AppLogger.info(
-          'Failed to delete APK after failed install: ${e.toString()}',
-        );
-      }
+      // Keep the file so the user can retry from the downloaded-APK list
+      // without re-downloading (#download-kept-on-error).
       unawaited(
         Fluttertoast.showToast(
           msg: installErrorCodeToMessage(result.errorCode!),
@@ -789,6 +784,15 @@ extension AppsProviderInstall on AppsProvider {
         unawaited(file.file.delete(recursive: true));
       }
       if (!isBg) settingsProvider.heavyImpact();
+    } else {
+      // Cancelled at the system prompt. Keep the file (retry can reuse it)
+      // and say exactly what happened instead of a vague generic message.
+      unawaited(
+        Fluttertoast.showToast(
+          msg: tr('installCancelled'),
+          toastLength: Toast.LENGTH_LONG,
+        ),
+      );
     }
     // Cancelled or already-installed/pending: keep the file so a retry can
     // reuse it without re-downloading (matches main).
@@ -1641,10 +1645,10 @@ extension AppsProviderInstall on AppsProvider {
             ),
           );
         }
-      } else if (!sayInstalled && context != null) {
-        // Foreground install did not complete — most likely the user cancelled
-        // at the system prompt. Surface a toast so the silent path isn't
-        // completely opaque (#install-no-feedback).
+      } else if (!sayInstalled && context != null && installerModeKey != 'stock') {
+        // Foreground install did not complete for a non-stock installer.
+        // The stock path already toasts the concrete outcome (error message
+        // or cancelled), so this generic fallback only covers other modes.
         unawaited(
           Fluttertoast.showToast(
             msg: tr('installFailedOrCancelled'),

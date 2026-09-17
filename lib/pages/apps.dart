@@ -14,6 +14,7 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/utils/locale_utils.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/pages/app.dart';
+import 'package:obtainium/pages/downloaded_apks.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
@@ -1003,6 +1004,15 @@ class AppsPageState extends State<AppsPage> {
     final isFilterOff = filter.isIdenticalTo(neutralFilter, settingsProvider);
     final trailing = <Widget>[
       _getSelectAllButton(context, listedApps),
+      IconButton(
+        tooltip: tr('downloadedApks'),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const DownloadedApksPage(),
+          ),
+        ),
+        icon: const Icon(Icons.download_for_offline_outlined),
+      ),
       if (!isFilterOff)
         IconButton(
           tooltip: '${tr('filter')} - ${tr('remove')}',

@@ -637,24 +637,71 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
       ),
-      ConnectedCard(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: GeneratedForm(
-          tileMode: true,
-          items: [
-            [
-              GeneratedFormTextField(
-                'downloadMirrors',
-                label: tr('downloadMirrors'),
-                required: false,
-              )..value = settingsProvider.downloadMirrors,
-            ],
+      CardTile(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TvDropdownMenu<String>(
+              expandedInsets: EdgeInsets.zero,
+              label: Text(tr('downloadMirrorPreset')),
+              initialSelection:
+                  const [
+                    'ghfast.top',
+                    'gh-proxy.com',
+                    'mirror.ghproxy.com',
+                    'ghproxy.net',
+                  ].contains(settingsProvider.downloadMirrors.trim())
+                  ? settingsProvider.downloadMirrors.trim()
+                  : settingsProvider.downloadMirrors.trim().isEmpty
+                  ? ''
+                  : null,
+              dropdownMenuEntries: [
+                const DropdownMenuEntry(
+                  value: 'ghfast.top',
+                  label: 'ghfast.top',
+                ),
+                const DropdownMenuEntry(
+                  value: 'gh-proxy.com',
+                  label: 'gh-proxy.com',
+                ),
+                const DropdownMenuEntry(
+                  value: 'mirror.ghproxy.com',
+                  label: 'mirror.ghproxy.com',
+                ),
+                const DropdownMenuEntry(
+                  value: 'ghproxy.net',
+                  label: 'ghproxy.net',
+                ),
+                DropdownMenuEntry(
+                  value: '',
+                  label: tr('downloadMirrorNone'),
+                ),
+              ],
+              onSelected: (value) {
+                if (value != null) {
+                  settingsProvider.downloadMirrors = value;
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+            GeneratedForm(
+              tileMode: true,
+              items: [
+                [
+                  GeneratedFormTextField(
+                    'downloadMirrors',
+                    label: tr('downloadMirrorsCustom'),
+                    required: false,
+                  )..value = settingsProvider.downloadMirrors,
+                ],
+              ],
+              onValueChanges: (values, valid, isBuilding) {
+                if (valid && !isBuilding) {
+                  settingsProvider.downloadMirrors = values['downloadMirrors'];
+                }
+              },
+            ),
           ],
-          onValueChanges: (values, valid, isBuilding) {
-            if (valid && !isBuilding) {
-              settingsProvider.downloadMirrors = values['downloadMirrors'];
-            }
-          },
         ),
       ),
       ToggleTile(
