@@ -383,7 +383,7 @@ class _ObtainiumState extends State<Obtainium> {
         }
 
         return MaterialApp(
-          title: 'Obtainium',
+          title: 'obtainAPK',
           navigatorKey: appNavigatorKey,
           localizationsDelegates: [
             ...context.localizationDelegates,
