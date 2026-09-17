@@ -2,8 +2,8 @@ import 'dart:io' show SocketException;
 import 'dart:ui' show Locale;
 
 import 'package:easy_localization/easy_localization.dart';
-import 'package:android_package_installer/android_package_installer.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
+import 'package:obtainium/installers/installer.dart';
 import 'package:obtainium/providers/source_provider.dart';
 
 class ObtainiumError {
@@ -177,7 +177,7 @@ class InstallError extends ObtainiumError {
         'INSTALL_FAILED',
         data: {
           'errorCode': code,
-          'message': 'Install error code $code',
+          'message': installErrorCodeToMessage(code),
         },
       );
 }
