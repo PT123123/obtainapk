@@ -1,5 +1,9 @@
 allprojects {
     repositories {
+        // Aliyun mirrors first — much faster inside China.
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
+        // Fallback to upstream if the mirror is missing an artifact.
         google()
         mavenCentral()
     }

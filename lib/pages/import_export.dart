@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
 import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/custom_errors.dart';
@@ -12,6 +13,7 @@ import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/services/lan_transfer_service.dart';
 import 'package:obtainium/utils/nav_helper.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -226,6 +228,53 @@ class ImportSection extends StatefulWidget {
 class _ImportSectionState extends State<ImportSection> {
   bool importInProgress = false;
 
+  Future<void> _runLanImport(BuildContext context) async {
+    final result = await showDialog<String>(
+      context: context,
+      builder: (_) => const LanImportDialog(),
+    );
+    if (result == null || !context.mounted) return;
+    final appsProvider = context.read<AppsProvider>();
+    final settingsProvider = context.read<SettingsProvider>();
+    settingsProvider.selectionClick();
+    try {
+      jsonDecode(result);
+    } catch (e) {
+      if (!context.mounted) return;
+      showError(ObtainiumError(tr('invalidInput')), context);
+      return;
+    }
+    final conflictCount = appsProvider
+        .appIdsInImportJSON(result)
+        .where((id) => appsProvider.apps.containsKey(id))
+        .length;
+    if (conflictCount > 0 && context.mounted) {
+      final proceed = await showConfirmDialog(
+        context,
+        title: tr('importX', args: [tr('appsString').toLowerCase()]),
+        content: Text(
+          tr('importOverwriteWarning', args: [conflictCount.toString()]),
+        ),
+        confirmText: tr('continue'),
+      );
+      if (!proceed) return;
+    }
+    setState(() => importInProgress = true);
+    try {
+      final value = await appsProvider.import(result);
+      appsProvider.addMissingCategories(settingsProvider);
+      if (!context.mounted) return;
+      showMessage(
+        '${tr('importedX', args: [plural('apps', value.key.length).toLowerCase()])}${value.value ? ' + ${tr('settings').toLowerCase()}' : ''}',
+        context,
+      );
+    } catch (e) {
+      if (context.mounted) showError(e, context);
+    } finally {
+      if (mounted) setState(() => importInProgress = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -235,11 +284,20 @@ class _ImportSectionState extends State<ImportSection> {
         if (importInProgress) const LinearProgressIndicator(),
         ConnectedCard(
           isFirst: true,
-          isLast: true,
+          isLast: false,
           child: ActionListTile(
             icon: Icons.download_outlined,
             label: tr('obtainiumImport'),
             onTap: importInProgress ? null : () => _runObtainiumImport(context),
+          ),
+        ),
+        ConnectedCard(
+          isFirst: false,
+          isLast: true,
+          child: ActionListTile(
+            icon: Icons.wifi_outlined,
+            label: tr('lanImportTitle'),
+            onTap: importInProgress ? null : () => _runLanImport(context),
           ),
         ),
         Column(
@@ -449,6 +507,40 @@ class _ExportSectionState extends State<ExportSection> {
     super.dispose();
   }
 
+  Future<void> _startLanShare() async {
+    final appsProvider = context.read<AppsProvider>();
+    final settingsProvider = context.read<SettingsProvider>();
+    settingsProvider.selectionClick();
+    if (settingsProvider.exportSettings >= 2) {
+      final proceed = await confirmExportIncludesSecrets(context);
+      if (!proceed) return;
+    }
+    final hasLan = await hasLanConnection();
+    if (!hasLan && context.mounted) {
+      showError(ObtainiumError(tr('lanShareNotAvailable')), context);
+      return;
+    }
+    final jsonMap = appsProvider.generateExportJSON();
+    final jsonString = jsonEncode(jsonMap);
+    try {
+      final info = await LanTransferService.start(
+        jsonPayload: jsonString,
+        fileName: '${settingsProvider.autoExportFileName ?? 'obtainium-export'}.json',
+      );
+      if (!mounted) {
+        await info.service.stop();
+        return;
+      }
+      await showDialog(
+        context: context,
+        builder: (_) => LanExportDialog(info: info),
+      );
+      await info.service.stop();
+    } catch (e) {
+      if (context.mounted) showError(e, context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final appsProvider = context.read<AppsProvider>();
@@ -509,13 +601,22 @@ class _ExportSectionState extends State<ExportSection> {
           ),
           ConnectedCard(
             isFirst: false,
-            isLast: snapshot.data == null,
+            isLast: false,
             child: ActionListTile(
               icon: Icons.upload_outlined,
               label: tr('obtainiumExport'),
               onTap: snapshot.data == null || exportInProgress
                   ? null
                   : runObtainiumExport,
+            ),
+          ),
+          ConnectedCard(
+            isFirst: false,
+            isLast: snapshot.data == null,
+            child: ActionListTile(
+              icon: Icons.wifi_outlined,
+              label: tr('lanTransfer'),
+              onTap: exportInProgress ? null : _startLanShare,
             ),
           ),
         ];
@@ -593,6 +694,175 @@ class _ExportSectionState extends State<ExportSection> {
           children: items,
         );
       },
+    );
+  }
+}
+
+/// Dialog shown on the sending side while a LAN transfer is active.
+/// Displays a QR code and a plain URL so the receiver can fetch the JSON.
+class LanExportDialog extends StatelessWidget {
+  final LanShareInfo info;
+  const LanExportDialog({super.key, required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(tr('lanExportTitle')),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(tr('lanExportRunning')),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: QrImageView(
+                data: info.url,
+                version: QrVersions.auto,
+                size: 200,
+                backgroundColor: Theme.of(context).colorScheme.surface,
+              ),
+            ),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: info.url));
+                showMessage(tr('copiedToClipboard'), context);
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  info.url,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ),
+            if (info.lanIp == null) ...[
+              const SizedBox(height: 8),
+              Text(
+                tr('lanShareNotAvailable'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton.tonal(
+          onPressed: () => Navigator.of(context).pop(),
+          autofocus: true,
+          child: Text(tr('lanExportStop')),
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog shown on the receiving side — enter the URL displayed by the sender
+/// and import the JSON directly without touching the file system.
+class LanImportDialog extends StatefulWidget {
+  const LanImportDialog({super.key});
+
+  @override
+  State<LanImportDialog> createState() => _LanImportDialogState();
+}
+
+class _LanImportDialogState extends State<LanImportDialog> {
+  final TextEditingController _urlController = TextEditingController();
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _connect() async {
+    final url = _urlController.text.trim();
+    if (url.isEmpty) {
+      setState(() => _error = tr('invalidInput'));
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final jsonString = await fetchJsonFromUrl(url);
+      if (!mounted) return;
+      Navigator.of(context).pop(jsonString);
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(tr('lanImportTitle')),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(tr('lanImportUrlHint')),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _urlController,
+              decoration: InputDecoration(
+                labelText: tr('lanImportConnect'),
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.url,
+              textInputAction: TextInputAction.go,
+              onFieldSubmitted: (_) => _connect(),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _loading ? null : () => Navigator.of(context).pop(),
+          child: Text(tr('cancel')),
+        ),
+        FilledButton(
+          onPressed: _loading ? null : _connect,
+          child: _loading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(tr('lanImportConnectBtn')),
+        ),
+      ],
     );
   }
 }
