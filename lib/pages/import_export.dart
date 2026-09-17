@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
 import 'package:obtainium/components/ui_widgets.dart';
@@ -724,7 +726,13 @@ class LanExportDialog extends StatelessWidget {
                 data: info.url,
                 version: QrVersions.auto,
                 size: 200,
-                backgroundColor: Theme.of(context).colorScheme.surface,
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                errorStateBuilder: (cxt, err) {
+                  return const Center(
+                    child: Icon(Icons.error_outline),
+                  );
+                },
               ),
             ),
             const SizedBox(height: 16),
@@ -830,6 +838,11 @@ class _LanImportDialogState extends State<LanImportDialog> {
               decoration: InputDecoration(
                 labelText: tr('lanImportConnect'),
                 border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.qr_code_scanner),
+                  tooltip: tr('lanScanQr'),
+                  onPressed: _loading ? null : _openScanner,
+                ),
               ),
               keyboardType: TextInputType.url,
               textInputAction: TextInputAction.go,
@@ -863,6 +876,109 @@ class _LanImportDialogState extends State<LanImportDialog> {
               : Text(tr('lanImportConnectBtn')),
         ),
       ],
+    );
+  }
+
+  /// Request camera permission, then open a full-screen scanner page.
+  /// On success, the scanned URL is pre-filled in the text field and the
+  /// import is triggered automatically.
+  Future<void> _openScanner() async {
+    final status = await Permission.camera.request();
+    if (!mounted) return;
+    if (!status.isGranted) {
+      showError(
+        ObtainiumError(tr('lanCameraPermissionRequired')),
+        context,
+      );
+      return;
+    }
+    final scannedUrl = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const _QrScannerPage()),
+    );
+    if (scannedUrl == null || !mounted) return;
+    setState(() {
+      _urlController.text = scannedUrl;
+      _error = null;
+    });
+    // Auto-connect when a URL is scanned
+    _connect();
+  }
+}
+
+/// Full-screen QR scanner used when the receiver taps the scan button
+/// in [LanImportDialog]. Returns the decoded URL string on success.
+class _QrScannerPage extends StatefulWidget {
+  const _QrScannerPage();
+
+  @override
+  State<_QrScannerPage> createState() => _QrScannerPageState();
+}
+
+class _QrScannerPageState extends State<_QrScannerPage> {
+  final MobileScannerController _controller = MobileScannerController();
+  bool _handled = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_handled) return;
+    for (final barcode in capture.barcodes) {
+      final raw = barcode.rawValue;
+      if (raw != null && raw.isNotEmpty) {
+        final uri = Uri.tryParse(raw);
+        if (uri != null && uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https')) {
+          _handled = true;
+          Navigator.of(context).pop(raw);
+          return;
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(tr('lanScanQr'))),
+      body: Stack(
+        children: [
+          MobileScanner(
+            controller: _controller,
+            onDetect: _onDetect,
+          ),
+          Center(
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: 2),
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  tr('lanScanHint'),
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
