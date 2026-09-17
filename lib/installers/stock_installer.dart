@@ -4,8 +4,10 @@ import 'package:android_package_installer/android_package_installer.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/installers/install_utils.dart';
 import 'package:obtainium/installers/installer.dart';
 import 'package:obtainium/providers/apps_provider.dart';
+import 'package:obtainium/providers/external_install_bridge.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/utils/string_utils.dart';
@@ -91,11 +93,54 @@ class StockInstaller extends Installer {
     required String appId,
     Map<String, dynamic> installOptions = const {},
   }) async {
-    // Foreground installs must NOT request a user-action-free session:
-    // MIUI/HyperOS aborts those from non-privileged installers with no
-    // dialog and no reason ("install cancelled"). BG auto-updates keep
-    // silence. The caller threads the flag via installOptions.
+    // Foreground installs must NOT use the PackageInstaller session flow:
+    // MIUI/HyperOS both suppress and focus-kill session confirmation dialogs
+    // from non-privileged installers within ~100ms, so the user never sees
+    // any dialog and the session aborts. A plain ACTION_VIEW handoff via
+    // startActivityForResult (like every APK installer app) is reliable:
+    // the system installer runs inside our task and shows its own UI with
+    // proper error reasons. Background auto-updates keep silent sessions.
     final silent = installOptions['silent'] != false;
+    if (!silent && apkFilePaths.length == 1) {
+      final baseline = await captureInstallBaseline(appId);
+      final contentUri = await ExternalInstallerBridge.instance
+          .contentUriForFile(apkFilePaths.first);
+      if (contentUri == null) {
+        throw ObtainiumError(tr('badDownload'));
+      }
+      AppLogger.info(
+        'Foreground install of $appId handed to the system installer via ACTION_VIEW.',
+      );
+      final res = await ExternalInstallerBridge.instance.launchInstallIntent(
+        uri: contentUri,
+        type: 'application/vnd.android.package-archive',
+        expectedPackageName: appId,
+      );
+      if (res == null) {
+        // Result tracking unavailable: fall back to bounded polling.
+        final installed = await waitForPackageInstall(
+          appId,
+          baseline,
+          attempts: 60,
+        );
+        return installed ? InstallResult.success() : InstallResult.cancelled();
+      }
+      final verified = await waitForPackageInstall(
+        appId,
+        baseline,
+        attempts: res.installed ? 60 : 2,
+      );
+      if (verified) {
+        return InstallResult.success();
+      }
+      if (res.errorCode != null) {
+        AppLogger.warn(
+          'System installer reported failure for $appId (code ${res.errorCode}).',
+        );
+        return InstallResult.error(res.errorCode!);
+      }
+      return InstallResult.cancelled();
+    }
     final code = await AndroidPackageInstaller.installApk(
       apkFilePath: apkFilePaths.join(','),
       silent: silent,
