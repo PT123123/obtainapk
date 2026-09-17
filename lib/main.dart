@@ -239,6 +239,17 @@ class _ObtainiumState extends State<Obtainium> {
   ) {
     if (_firstRunHandled) return;
     _firstRunHandled = true;
+    // "All files access" so app data lives in public storage
+    // (/storage/emulated/0/Obtainium) and survives reinstall. Requested on
+    // every launch until granted (not just first run — upgrades of existing
+    // installs need the prompt too). Opens the system settings page; if
+    // denied, storage silently falls back to app-private dirs.
+    if (!settings.isTV) {
+      unawaited(() async {
+        if (await Permission.manageExternalStorage.isGranted) return;
+        await Permission.manageExternalStorage.request();
+      }());
+    }
     final isFirstRun = settings.checkAndFlipFirstRun();
     if (isFirstRun) {
       AppLogger.info('This is the first ever run of Obtainium.');
