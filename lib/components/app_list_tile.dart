@@ -549,35 +549,27 @@ class AppListTile extends StatelessWidget {
             ? tileChild
             : Dismissible(
                 key: ValueKey(appId),
-                direction: DismissDirection.horizontal,
+                // Only allow swipe from start to end (install/update); the
+                // end-to-start swipe that removed the app was too easy to
+                // trigger accidentally while scrolling.
+                direction: DismissDirection.startToEnd,
                 background: swipeBackground ?? const SizedBox.shrink(),
-                secondaryBackground: Container(
-                  color: cs.errorContainer,
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 24),
-                  child: Icon(Icons.delete_outline, color: cs.onErrorContainer),
-                ),
                 confirmDismiss: (direction) async {
-                  if (direction == DismissDirection.startToEnd) {
-                    if ((canInstall || canUpdate) &&
-                        !appsProvider.areDownloadsRunning()) {
-                      settingsProvider.heavyImpact();
-                      unawaited(
-                        appsProvider
-                            .downloadAndInstallLatestApps([
-                              appId,
-                            ], appNavigatorKey.currentContext)
-                            .catchError((e) {
-                              if (context.mounted) showError(e, context);
-                              return <String>[];
-                            }),
-                      );
-                    }
-                    return false;
-                  } else {
-                    settingsProvider.lightImpact();
-                    return appsProvider.removeAppsWithModal(context, [_app]);
+                  if ((canInstall || canUpdate) &&
+                      !appsProvider.areDownloadsRunning()) {
+                    settingsProvider.heavyImpact();
+                    unawaited(
+                      appsProvider
+                          .downloadAndInstallLatestApps([
+                            appId,
+                          ], appNavigatorKey.currentContext)
+                          .catchError((e) {
+                            if (context.mounted) showError(e, context);
+                            return <String>[];
+                          }),
+                    );
                   }
+                  return false;
                 },
                 child: tileChild,
               );
