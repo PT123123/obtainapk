@@ -804,16 +804,68 @@ String? realInstalledVersionOf(App app, PackageInfo? installedInfo) {
 }
 
 Future<Directory> getAppStorageDir() async {
+  // Use public storage /storage/emulated/0/Obtainium so the app list,
+  // icon cache and APK cache SURVIVE an uninstall + reinstall.
+  // App-private directories (getApplicationDocumentsDirectory /
+  // getExternalStorageDirectory) are wiped on uninstall. requestLegacyExternalStorage
+  // in AndroidManifest grants direct access to the shared storage root.
+  final public = Directory('/storage/emulated/0/Obtainium');
+  final created = !public.existsSync();
+  if (created) {
+    public.createSync(recursive: true);
+  }
+  // Migrate existing user data from the old app-private storage paths
+  // (Android/data/pkg/files or data/data/pkg) the first time this public
+  // directory is used. Apps, icons and APK caches get copied over so
+  // existing users don't lose their library on upgrade.
+  if (created) {
+    unawaited(_migrateFromOldStorage(public));
+  }
+  return public;
+}
+
+/// One-shot migration: copies app_data/, icons/, apks/ from whichever old
+/// private path had them into the new public storage root. Runs only when
+/// the public directory was freshly created (migration trigger), so it's a
+/// no-op on subsequent launches.
+Future<void> _migrateFromOldStorage(Directory newRoot) async {
   try {
-    final extDir = await getExternalStorageDirectory();
-    if (extDir != null) {
-      if (!extDir.existsSync()) {
-        extDir.createSync(recursive: true);
-      }
-      return extDir;
+    final candidates = <Directory>[];
+    if (Platform.isAndroid) {
+      final ext = await getExternalStorageDirectory();
+      if (ext != null) candidates.add(ext);
     }
-  } catch (_) {}
-  return await getApplicationDocumentsDirectory();
+    candidates.add(await getApplicationDocumentsDirectory());
+    final dirsToMigrate = ['app_data', 'icons', 'apks'];
+    for (final old in candidates) {
+      for (final name in dirsToMigrate) {
+        final src = Directory('${old.path}/$name');
+        if (!src.existsSync()) continue;
+        final dst = Directory('${newRoot.path}/$name');
+        if (dst.existsSync() && dst.listSync().isNotEmpty) continue;
+        await src.copyWithNewRoot(dst);
+      }
+    }
+  } catch (e) {
+    // Migration is best-effort; never block startup.
+    AppLogger.info('Storage migration skipped: ${e.toString()}');
+  }
+}
+
+extension _CopyRecursive on Directory {
+  Future<void> copyWithNewRoot(Directory target) async {
+    if (!existsSync()) return;
+    target.createSync(recursive: true);
+    await for (final entity in list(recursive: true)) {
+      final relative = path.substring(absolute.path.length);
+      final newPath = '${target.path}$relative';
+      if (entity is File) {
+        await entity.copy(newPath);
+      } else if (entity is Directory) {
+        Directory(newPath).createSync(recursive: true);
+      }
+    }
+  }
 }
 
 class AppsProvider with ChangeNotifier {
