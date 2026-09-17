@@ -20,11 +20,9 @@ packages:
   android_package_installer:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "94525707bd1fba8cba4d19b4cb2b928580913510"
-      resolved-ref: "94525707bd1fba8cba4d19b4cb2b928580913510"
-      url: "https://github.com/ImranR98/android_package_installer"
-    source: git
+      path: "plugins/android_package_installer"
+      relative: true
+    source: path
     version: "0.0.1"
   android_package_manager:
     dependency: "direct main"

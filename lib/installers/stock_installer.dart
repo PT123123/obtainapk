@@ -91,8 +91,14 @@ class StockInstaller extends Installer {
     required String appId,
     Map<String, dynamic> installOptions = const {},
   }) async {
+    // Foreground installs must NOT request a user-action-free session:
+    // MIUI/HyperOS aborts those from non-privileged installers with no
+    // dialog and no reason ("install cancelled"). BG auto-updates keep
+    // silence. The caller threads the flag via installOptions.
+    final silent = installOptions['silent'] != false;
     final code = await AndroidPackageInstaller.installApk(
       apkFilePath: apkFilePaths.join(','),
+      silent: silent,
     );
     return InstallResult.fromPlatformCode(code);
   }
