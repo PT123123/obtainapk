@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:easy_localization/easy_localization.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
@@ -254,7 +255,6 @@ class AddAppPageState extends State<AddAppPage> {
     setState(() {});
     try {
       final userPickedTrackOnly = additionalSettings['trackOnly'] == true;
-      App? app;
       var confirmed = await getTrackOnlyConfirmationIfNeeded(
         userPickedTrackOnly,
         context,
@@ -267,73 +267,117 @@ class AddAppPageState extends State<AddAppPage> {
       if (confirmed) {
         final s = pickedSource!;
         final trackOnly = s.enforceTrackOnly || userPickedTrackOnly;
-        app = await sourceProvider.getApp(
-          s,
-          userInput.trim(),
+        // --- Phase 1 (local, fast): build a placeholder app and save it,
+        // so we can navigate away immediately while network work continues
+        // in the background. ---
+        final standardUrl = s.standardizeUrl(userInput.trim());
+        final placeholderId = sourceProvider.generateTempID(
+          standardUrl,
           additionalSettings,
-          trackOnlyOverride: trackOnly,
-          sourceIsOverriden: pickedSourceOverride != null,
-          inferAppIdIfOptional: inferAppIdIfOptional,
         );
-        if (isTempId(app) && !app.settings.getBool('trackOnly')) {
-          if (!context.mounted) return;
-          final apkUrl = await appsProvider.confirmAppFileUrl(
-            app,
-            context,
-            false,
-          );
-          if (apkUrl == null) {
-            throw ObtainiumError(tr('cancelled'));
-          }
-          app = app.copyWith(
-            preferredApkIndex: app.apkUrls
-                .map((e) => e.value)
-                .toList()
-                .indexOf(apkUrl.value),
-          );
-          if (!context.mounted) return;
-          final downloadedArtifact = await appsProvider.downloadApp(
-            app,
-            context,
-            notificationsProvider: notificationsProvider,
-          );
-          DownloadedApk? downloadedFile;
-          DownloadedDir? downloadedDir;
-          if (downloadedArtifact is DownloadedApk) {
-            downloadedFile = downloadedArtifact;
-          } else if (downloadedArtifact is DownloadedDir) {
-            downloadedDir = downloadedArtifact;
-          }
-          if (downloadedFile == null && downloadedDir == null) {
-            throw ObtainiumError(tr('downloadFailed'));
-          }
-          app = app.copyWith(id: downloadedFile?.appId ?? downloadedDir!.appId);
-        }
-        if (appsProvider.apps.containsKey(app.id)) {
-          final existing = appsProvider.apps[app.id];
+        if (appsProvider.apps.containsKey(placeholderId)) {
+          final existing = appsProvider.apps[placeholderId]!;
           throw ObtainiumError(
-            '${tr('appAlreadyAdded')}: ${existing?.app.name ?? app.id} (${app.id})',
+            '${tr('appAlreadyAdded')}: ${existing.app.name} (${existing.app.id})',
           );
         }
-        if (app.settings.getBool('trackOnly') ||
-            !app.settings.getBool('versionDetection')) {
-          app = app.copyWith(installedVersion: app.latestVersion);
+        String placeholderName = standardUrl;
+        String placeholderAuthor = '';
+        try {
+          final uri = Uri.parse(standardUrl);
+          final segs = uri.pathSegments.where((x) => x.isNotEmpty).toList();
+          if (segs.isNotEmpty) {
+            placeholderName = segs.last;
+            if (segs.length > 1) placeholderAuthor = segs[segs.length - 2];
+          }
+        } catch (_) {
+          // keep defaults
         }
-        app = app.copyWith(categories: pickedCategories);
-        await appsProvider.saveApps([app], onlyIfExists: false);
-      }
-      if (app != null && context.mounted) {
+        final placeholderApp = App(
+          id: placeholderId,
+          url: standardUrl,
+          author: placeholderAuthor,
+          name: placeholderName,
+          installedVersion: null,
+          latestVersion: tr('checking'),
+          apkUrls: const [],
+          preferredApkIndex: 0,
+          additionalSettings: Map.from(additionalSettings)
+            ..['trackOnly'] = trackOnly,
+          lastUpdateCheck: DateTime.now(),
+          pinned: false,
+          categories: pickedCategories,
+        );
+        await appsProvider.saveApps([placeholderApp], onlyIfExists: false);
+        if (!context.mounted) return;
         final route = MaterialPageRoute<void>(
           traversalEdgeBehavior: traversalEdgeBehaviorFor(context),
-          builder: (context) => AppPage(appId: app!.id),
+          builder: (context) => AppPage(appId: placeholderId),
         );
         unawaited(Navigator.of(context).pushReplacement(route));
+        // --- Phase 2 (background): resolve real app info over the network
+        // and update the saved record. The placeholder already navigated the
+        // user into AppPage, so they see "checking" briefly then the real
+        // version info flips in once this completes. ---
+        unawaited(_resolveInBackground(
+          placeholderApp,
+          s,
+          standardUrl,
+          trackOnly,
+        ));
+        return;
       }
     } catch (e) {
       if (context.mounted) showError(e, context);
     } finally {
       gettingAppInfo = false;
       if (mounted) setState(() {});
+    }
+  }
+
+  /// Runs after [addApp] has already navigated away. Fetches real release
+  /// info from the source, updates the saved placeholder record in-place
+  /// (id stays the same so AppPage keeps working), and shows a toast on
+  /// success/failure.
+  Future<void> _resolveInBackground(
+    App placeholder,
+    AppSource source,
+    String standardUrl,
+    bool trackOnly,
+  ) async {
+    try {
+      final realApp = await sourceProvider.getApp(
+        source,
+        standardUrl,
+        {...placeholder.additionalSettings, 'trackOnly': trackOnly},
+        currentApp: placeholder,
+        trackOnlyOverride: trackOnly,
+        sourceIsOverriden: pickedSourceOverride != null,
+        inferAppIdIfOptional: inferAppIdIfOptional,
+      );
+      // Force id to stay the same so we just UPDATE the existing record
+      // (placeholderId was already saved). No delete + re-add needed.
+      final merged = realApp.copyWith(
+        id: placeholder.id,
+        categories: placeholder.categories,
+      );
+      await appsProvider.saveApps([merged], onlyIfExists: false);
+      unawaited(
+        Fluttertoast.showToast(
+          msg: tr('appAddedToast', args: [realApp.name]),
+          toastLength: Toast.LENGTH_SHORT,
+        ),
+      );
+    } catch (e) {
+      // Network failed, no release, version too new, etc. — the placeholder
+      // app stays saved but keeps "checking" as latestVersion. The AppPage
+      // will surface this when the user opens it. Toast so they know why.
+      unawaited(
+        Fluttertoast.showToast(
+          msg: tr('appResolveFailedToast', args: [placeholder.name]),
+          toastLength: Toast.LENGTH_LONG,
+        ),
+      );
     }
   }
 
