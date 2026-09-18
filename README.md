@@ -14,6 +14,7 @@ This is a customized fork of Obtainium published as **ObtainAPK** (package ID `c
 - **Mirror download fallback**: when the direct HTTPS download fails, the app automatically retries the same APK through configurable acceleration mirrors (`ghfast.top`, `gh-proxy.com`, `mirror.ghproxy.com` by default). Pick a strategy under *Settings → Download strategy*: `Direct first, fall back to mirrors` (default), `Mirrors first`, or `Direct only`. Note: GitHub Release assets cannot be downloaded over SSH (SSH only works for `git` operations), which is why mirrors are used instead.
 - **Keep downloaded APKs**: enable *Settings → Keep downloaded APKs* to keep each APK after a successful install in the public `Download/Obtainium` folder instead of silently deleting it. Download notifications also show the exact file path.
 - **Manually maintained app list**: the [`marketplace/apps.json`](./marketplace/apps.json) file holds the app configurations this marketplace offers.
+- **Grouped app list (`list.json`)**: the [`list.json`](./list.json) file at the repo root is the source of truth for the bundled app groups. The app pulls it on every startup (remote URL with mirror fallback, then a bundled copy) and shows a clickable **group switcher** above the app list (`全部` / `mine` / `open`). See [Grouped app list](#grouped-app-list-listjson) below.
 
 ### Using the marketplace list
 
@@ -22,6 +23,48 @@ This is a customized fork of Obtainium published as **ObtainAPK** (package ID `c
 3. Or add a single app by sharing its GitHub/other source URL into ObtainAPK (e.g. from a browser).
 
 To add a new app to the marketplace, edit `marketplace/apps.json` following the entries already present (an `id` plus the source `url`, `author`, `name` and `additionalSettings` is enough) and push the change.
+
+### Grouped app list (`list.json`)
+
+[`list.json`](./list.json) at the repository root groups the pre-bundled apps so the app list can be filtered by group. Structure:
+
+```json
+{
+  "schemaVersion": 1,
+  "groups": [
+    { "id": "mine", "name": "mine", "apps": [ /* your pre-configured apps */ ] },
+    { "id": "open", "name": "open", "apps": [ /* suggested open-source apps */ ] }
+  ]
+}
+```
+
+Current groups:
+
+- **`mine`** — your pre-configured apps (the apps previously shipped via `marketplace/apps.json`: NewPipe, Aegis, and the `PT123123/*` projects such as a-music, aw-android-native, a-quickstart, …).
+- **`open`** — a curated set of other GitHub open-source Android apps: **ZipXtract**, **思源笔记 (SiYuan)**, **NekoBox**, **KOReader**, **F-Droid**, **disky**.
+
+#### Behavior
+
+- **Startup pull**: on every launch the app fetches `list.json` from
+  `https://raw.githubusercontent.com/PT123123/obtainapk/main/list.json`
+  (with a `ghproxy.com` mirror fallback), and falls back to the bundled
+  `assets/list.json` if the network is unavailable. Each app is merged into your
+  store and tagged with its group id in `App.categories`. Existing user apps are
+  **never clobbered** — only the group tag is added; your pinned / renamed /
+  reconfigured apps are preserved.
+- **Group switcher**: a horizontal, clickable row of chips sits above the app
+  list — `全部` (all), `mine`, `open`. Tapping a chip filters the list to that
+  group. The selection persists across restarts.
+- **Editing**: to change the bundled groups, edit `list.json` at the repo root
+  **and** its copy `assets/list.json` (the bundled fallback), then push. The next
+  app launch pulls the update.
+
+### App list swipe gestures
+
+On the app list, each tile supports two swipe directions (when swipe actions are enabled in Settings):
+
+- **Swipe right** → **Install / Update** the app. If the install or download fails, a prompt now appears so you are not left with a silent failure.
+- **Swipe left** → **Refresh this app**: re-fetch its latest release metadata from the source. A toast confirms success (`已刷新，最新：<version>`) or shows the error if the fetch fails.
 
 More info:
 - [Obtainium Wiki](https://wiki.obtainium.imranr.dev/) ([repository](https://github.com/ImranR98/Obtainium-Wiki))

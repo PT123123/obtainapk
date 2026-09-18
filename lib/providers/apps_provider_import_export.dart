@@ -210,6 +210,74 @@ extension AppsProviderImportExport on AppsProvider {
     return MapEntry<List<App>, bool>(importedApps, hasSettings);
   }
 
+  /// Merges a grouped list (list.json format: `{groups:[{id,name,apps:[]}]}`)
+  /// into the store. Each app is tagged with its group id in
+  /// [App.categories]. Existing apps keep all their other data (pinned,
+  /// installedVersion, additionalSettings, …) — only the group tag is unioned
+  /// in. New apps are added. Safe to call on every startup: it is idempotent.
+  ///
+  /// Group metadata (`{id,name}`) is persisted to settings so the group
+  /// switcher can render its chips without re-fetching.
+  Future<void> mergeGroupedList(String raw) async {
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } catch (e) {
+      throw ObtainiumError('${tr('failedToImport')}: ${e.toString()}');
+    }
+    if (decoded is! Map) {
+      throw ObtainiumError(tr('failedToImport'));
+    }
+    final groups = decoded['groups'] as List<dynamic>? ?? [];
+    final List<Map<String, String>> groupMeta = [];
+    final List<App> toSave = [];
+    for (final g in groups) {
+      if (g is! Map) continue;
+      final gid = g['id'] as String?;
+      if (gid == null || gid.isEmpty) continue;
+      groupMeta.add({'id': gid, 'name': (g['name'] as String?) ?? gid});
+      final appsList = g['apps'] as List<dynamic>? ?? [];
+      for (final a in appsList) {
+        if (a is! Map) continue;
+        App parsed;
+        try {
+          parsed = appFromStoredJson(Map<String, dynamic>.from(a));
+        } catch (e) {
+          AppLogger.warn('Skipping unparseable app in group $gid: $e');
+          continue;
+        }
+        final cats = [...parsed.categories];
+        if (!cats.contains(gid)) cats.add(gid);
+        final existing = apps[parsed.id]?.app;
+        if (existing != null) {
+          final mergedCats = {...existing.categories, ...cats}.toList();
+          // Only rewrite the app if the group tag actually changed, so we never
+          // clobber a user's pinned / renamed / reconfigured app on every launch.
+          if (!_listEquals(existing.categories, mergedCats)) {
+            toSave.add(existing.copyWith(categories: mergedCats));
+          }
+        } else {
+          toSave.add(parsed.copyWith(categories: cats));
+        }
+      }
+    }
+    if (toSave.isNotEmpty) {
+      await waitForAppsToLoad();
+      await saveApps(toSave, onlyIfExists: false, reuseInstalledInfo: true);
+    }
+    if (groupMeta.isNotEmpty) {
+      settingsProvider.groupedListGroups = groupMeta;
+    }
+  }
+
+  bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   void _applyImportedSettings(Map<String, dynamic> settingsMap) {
     settingsMap.forEach((key, value) {
       if (value is int) {

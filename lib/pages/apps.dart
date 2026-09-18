@@ -64,6 +64,11 @@ class AppsPageState extends State<AppsPage> {
   bool _collapseStateInitDone = false;
   bool _selectionPruneScheduled = false;
 
+  /// Currently selected app-list group from the remote grouped list (list.json).
+  /// `null` means "show all apps" (no group filter). Mirrors the persisted
+  /// [SettingsProvider.selectedAppGroup].
+  String? _selectedGroup;
+
   final TextEditingController searchController = TextEditingController();
   final ScrollController scrollController = ScrollController();
   final GlobalKey<RefreshIndicatorState> refreshIndicatorKey =
@@ -77,6 +82,7 @@ class AppsPageState extends State<AppsPage> {
     if (!_providersInitialized) {
       appsProvider = context.read<AppsProvider>();
       settingsProvider = context.read<SettingsProvider>();
+      _selectedGroup = settingsProvider.selectedAppGroup;
       _providersInitialized = true;
     }
     if (!_autoRefreshTriggered &&
@@ -1051,6 +1057,46 @@ class AppsPageState extends State<AppsPage> {
     );
   }
 
+  /// A horizontal, clickable group switcher shown above the app list. Renders a
+  /// "全部" (all) chip plus one chip per group defined in the remote grouped
+  /// list (list.json). Tapping a chip filters the list by that group's tag.
+  Widget _getGroupSwitcherSliver(BuildContext context) {
+    final groups = settingsProvider.groupedListGroups;
+    if (groups.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    final chips = <Widget>[
+      _groupChip(context, null, '全部'),
+      ...groups.map((g) => _groupChip(context, g['id']!, g['name']!)),
+    ];
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(children: chips),
+        ),
+      ),
+    );
+  }
+
+  Widget _groupChip(BuildContext context, String? groupId, String label) {
+    final selected = _selectedGroup == groupId;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) {
+          setState(() {
+            _selectedGroup = groupId;
+          });
+          settingsProvider.selectedAppGroup = groupId;
+        },
+      ),
+    );
+  }
+
   Widget _getUpdateBannerSliver(
     BuildContext context,
     AppsProvider appsProvider,
@@ -1210,10 +1256,17 @@ class AppsPageState extends State<AppsPage> {
         validCategories,
       );
     }
-    final listedApps = getFilteredAndSortedApps(
+    var listedApps = getFilteredAndSortedApps(
       List<AppInMemory>.from(apps),
       existingUpdates,
     );
+    // Group switcher (分组切换): narrow the list to the selected group's tag.
+    if (_selectedGroup != null) {
+      listedApps =
+          listedApps
+              .where((a) => a.app.categories.contains(_selectedGroup))
+              .toList();
+    }
 
     final listedAppIdSet = listedApps.map((e) => e.app.id).toSet();
     final (
@@ -1300,6 +1353,8 @@ class AppsPageState extends State<AppsPage> {
                   ),
                   if (appsProvider.apps.isNotEmpty)
                     _getSearchBarSliver(context, settingsProvider, listedApps),
+                  if (appsProvider.apps.isNotEmpty)
+                    _getGroupSwitcherSliver(context),
                   if (appsProvider.apps.isNotEmpty)
                     _getUpdateBannerSliver(
                       context,

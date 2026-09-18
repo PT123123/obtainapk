@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "groups": [
+    {
+      "id": "mine",
+      "name": "mine",
+      "apps": [
+        {
+          "id": "org.schabi.newpipe",
+          "url": "https://github.com/TeamNewPipe/NewPipe",
+          "author": "TeamNewPipe",
+          "name": "NewPipe",
+          "additionalSettings": "{}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "com.beemdevelopment.aegis",
+          "url": "https://github.com/beemdevelopment/Aegis",
+          "author": "beemdevelopment",
+          "name": "Aegis Authenticator",
+          "additionalSettings": "{}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "100000000001",
+          "url": "https://github.com/PT123123/a-music",
+          "author": "PT123123",
+          "name": "a-music",
+          "additionalSettings": "{\"about\": \"mpv + Compose 播放器\"}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "100000000002",
+          "url": "https://github.com/PT123123/aw-android-native",
+          "author": "PT123123",
+          "name": "aw-android-native",
+          "additionalSettings": "{\"about\": \"原生 Kotlin 版 ActivityWatch 客户端\"}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "100000000003",
+          "url": "https://github.com/PT123123/a-quickstart",
+          "author": "PT123123",
+          "name": "a-quickstart",
+          "additionalSettings": "{\"about\": \"快开启，T9 九键启动器\"}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "100000000004",
+          "url": "https://github.com/PT123123/a-justbrowse",
+          "author": "PT123123",
+          "name": "a-justbrowse",
+          "additionalSettings": "{\"about\": \"JustBrowse，油猴脚本+局域网同步浏览器\"}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "100000000005",
+          "url": "https://github.com/PT123123/a-readtext",
+          "author": "PT123123",
+          "name": "readtext",
+          "additionalSettings": "{\"about\": \"离线朗读器，sherpa-onnx\"}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "100000000006",
+          "url": "https://github.com/PT123123/aphone-s2t",
+          "author": "PT123123",
+          "name": "s2t",
+          "additionalSettings": "{\"about\": \"实时语音转写，sherpa-onnx Paraformer\"}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "100000000007",
+          "url": "https://github.com/PT123123/mibandhub",
+          "author": "PT123123",
+          "name": "手环",
+          "additionalSettings": "{\"about\": \"手环管家 shouhuan，小米手环\"}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "100000000008",
+          "url": "https://github.com/PT123123/fitness-record",
+          "author": "PT123123",
+          "name": "fitness",
+          "additionalSettings": "{\"about\": \"健身计时+训练记录\"}",
+          "preferredApkIndex": 0
+        }
+      ]
+    },
+    {
+      "id": "open",
+      "name": "open",
+      "apps": [
+        {
+          "id": "com.wirelessalien.zipxtract",
+          "url": "https://github.com/WirelessAlien/ZipXtract",
+          "author": "WirelessAlien",
+          "name": "ZipXtract",
+          "additionalSettings": "{}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "org.b3log.siyuan",
+          "url": "https://github.com/siyuan-note/siyuan-android",
+          "author": "siyuan-note",
+          "name": "思源笔记",
+          "additionalSettings": "{}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "moe.nb4a",
+          "url": "https://github.com/MatsuriDayo/NekoBoxForAndroid",
+          "author": "MatsuriDayo",
+          "name": "NekoBox",
+          "additionalSettings": "{}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "org.koreader.launcher",
+          "url": "https://github.com/koreader/koreader",
+          "author": "koreader",
+          "name": "KOReader",
+          "additionalSettings": "{}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "org.fdroid.fdroid",
+          "url": "https://github.com/f-droid/fdroidclient",
+          "author": "f-droid",
+          "name": "F-Droid",
+          "additionalSettings": "{}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "de.felixnuesse.disky",
+          "url": "https://github.com/newhinton/disky",
+          "author": "newhinton",
+          "name": "disky",
+          "additionalSettings": "{}",
+          "preferredApkIndex": 0
+        }
+      ]
+    }
+  ]
+}
