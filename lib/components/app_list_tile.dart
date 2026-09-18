@@ -413,6 +413,21 @@ class AppListTile extends StatelessWidget {
           )
         : null;
 
+    // Left-swipe (end -> start) background: "refresh this app" (re-fetch latest).
+    final swipeBackgroundEnd = Container(
+      color: cs.secondaryContainer,
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.only(right: 24),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('刷新', style: TextStyle(color: cs.onSecondaryContainer)),
+          const SizedBox(width: 8),
+          Icon(Icons.refresh_rounded, color: cs.onSecondaryContainer),
+        ],
+      ),
+    );
+
     // TODO: Consider using the `child` parameter of ValueListenableBuilder
     // to cache the built widget tree and avoid rebuilds when only the
     // downloadProgress changes.
@@ -549,25 +564,63 @@ class AppListTile extends StatelessWidget {
             ? tileChild
             : Dismissible(
                 key: ValueKey(appId),
-                // Only allow swipe from start to end (install/update); the
-                // end-to-start swipe that removed the app was too easy to
-                // trigger accidentally while scrolling.
-                direction: DismissDirection.startToEnd,
+                // Allow both directions:
+                //  - start -> end (right swipe): install / update
+                //  - end -> start (left swipe): refresh this app (re-fetch latest)
+                direction: DismissDirection.horizontal,
                 background: swipeBackground ?? const SizedBox.shrink(),
+                secondaryBackground: swipeBackgroundEnd,
                 confirmDismiss: (direction) async {
-                  if ((canInstall || canUpdate) &&
-                      !appsProvider.areDownloadsRunning()) {
-                    settingsProvider.heavyImpact();
-                    unawaited(
-                      appsProvider
-                          .downloadAndInstallLatestApps([
-                            appId,
-                          ], appNavigatorKey.currentContext)
-                          .catchError((e) {
-                            if (context.mounted) showError(e, context);
-                            return <String>[];
-                          }),
-                    );
+                  if (direction == DismissDirection.startToEnd) {
+                    // Right swipe: install / update. Surface any failure to the
+                    // user (previously a failed install could fail silently).
+                    if ((canInstall || canUpdate) &&
+                        !appsProvider.areDownloadsRunning()) {
+                      settingsProvider.heavyImpact();
+                      unawaited(
+                        appsProvider
+                            .downloadAndInstallLatestApps([
+                              appId,
+                            ], appNavigatorKey.currentContext)
+                            .then((res) {
+                              if (res.isNotEmpty && context.mounted) {
+                                final np =
+                                    context.read<NotificationsProvider>();
+                                np.cancel(updateNotificationId);
+                                np.cancel(
+                                  SilentUpdateAttemptNotification(
+                                    [],
+                                    id: res[0].hashCode,
+                                  ).id,
+                                );
+                              }
+                            })
+                            .catchError((e) {
+                              if (context.mounted) showError(e, context);
+                              return;
+                            }),
+                      );
+                    }
+                  } else if (direction == DismissDirection.endToStart) {
+                    // Left swipe: refresh this single app (re-fetch latest info).
+                    if (!appsProvider.areDownloadsRunning()) {
+                      settingsProvider.lightImpact();
+                      unawaited(
+                        appsProvider.checkUpdate(appId).then((App? updated) {
+                          if (context.mounted) {
+                            showMessage(
+                              updated == null
+                                  ? '已拉取最新信息，无更新'
+                                  : '已刷新，最新：${updated.latestVersion}',
+                              context,
+                            );
+                          }
+                        }).catchError((e) {
+                          if (context.mounted) showError(e, context);
+                          return null;
+                        }),
+                      );
+                    }
                   }
                   return false;
                 },
