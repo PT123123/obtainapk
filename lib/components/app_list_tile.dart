@@ -785,18 +785,18 @@ class AppListGroupSection extends StatelessWidget {
 }
 
 class AppsFilter {
-  String nameFilter;
-  String authorFilter;
-  String idFilter;
+  /// Free-text query typed into the app list's search bar. Every whitespace
+  /// separated token must match the app's name, author or ID (case
+  /// insensitive) — the filter sheet deliberately has no separate
+  /// name/author/ID inputs, the search bar covers all three.
+  String searchQuery;
   bool includeUptodate;
   bool includeNonInstalled;
   Set<String> categoryFilter;
   String sourceFilter;
 
   AppsFilter({
-    this.nameFilter = '',
-    this.authorFilter = '',
-    this.idFilter = '',
+    this.searchQuery = '',
     this.includeUptodate = true,
     this.includeNonInstalled = true,
     this.categoryFilter = const {},
@@ -805,9 +805,6 @@ class AppsFilter {
 
   Map<String, dynamic> toFormValuesMap() {
     return {
-      'appName': nameFilter,
-      'author': authorFilter,
-      'appId': idFilter,
       'upToDateApps': includeUptodate,
       'nonInstalledApps': includeNonInstalled,
       'sourceFilter': sourceFilter,
@@ -815,18 +812,14 @@ class AppsFilter {
   }
 
   void setFormValuesFromMap(Map<String, dynamic> values) {
-    nameFilter = values['appName'] as String? ?? '';
-    authorFilter = values['author'] as String? ?? '';
-    idFilter = values['appId'] as String? ?? '';
-    includeUptodate = values['upToDateApps'] as bool? ?? false;
-    includeNonInstalled = values['nonInstalledApps'] as bool? ?? false;
+    // Fail open: a missing switch value must never silently hide apps.
+    includeUptodate = values['upToDateApps'] as bool? ?? true;
+    includeNonInstalled = values['nonInstalledApps'] as bool? ?? true;
     sourceFilter = values['sourceFilter'] as String? ?? '';
   }
 
   bool isIdenticalTo(AppsFilter other, SettingsProvider settingsProvider) =>
-      authorFilter.trim() == other.authorFilter.trim() &&
-      nameFilter.trim() == other.nameFilter.trim() &&
-      idFilter.trim() == other.idFilter.trim() &&
+      searchQuery.trim() == other.searchQuery.trim() &&
       includeUptodate == other.includeUptodate &&
       includeNonInstalled == other.includeNonInstalled &&
       settingsProvider.setEqual(categoryFilter, other.categoryFilter) &&
@@ -839,14 +832,12 @@ class AppListBuilder {
     AppsFilter filter,
     SettingsProvider settingsProvider,
   ) {
-    final nameTokens = filter.nameFilter.isNotEmpty
-        ? filter.nameFilter
-              .split(' ')
-              .where((element) => element.trim().isNotEmpty)
-              .toList()
-        : const <String>[];
-    final authorTokens = filter.authorFilter.isNotEmpty
-        ? filter.authorFilter
+    // A single query matches the name, author and ID alike: the search bar is
+    // the only place these are filtered from (no duplicate inputs in the
+    // filter sheet).
+    final searchTokens = filter.searchQuery.trim().isNotEmpty
+        ? filter.searchQuery
+              .toLowerCase()
               .split(' ')
               .where((element) => element.trim().isNotEmpty)
               .toList()
@@ -866,18 +857,10 @@ class AppListBuilder {
       if (app.app.installedVersion == null && !(filter.includeNonInstalled)) {
         return false;
       }
-      for (var t in nameTokens) {
-        if (!app.name.toLowerCase().contains(t.toLowerCase())) {
-          return false;
-        }
-      }
-      for (var t in authorTokens) {
-        if (!app.author.toLowerCase().contains(t.toLowerCase())) {
-          return false;
-        }
-      }
-      if (filter.idFilter.isNotEmpty) {
-        if (!app.app.id.contains(filter.idFilter)) {
+      for (var t in searchTokens) {
+        if (!app.name.toLowerCase().contains(t) &&
+            !app.author.toLowerCase().contains(t) &&
+            !app.app.id.toLowerCase().contains(t)) {
           return false;
         }
       }

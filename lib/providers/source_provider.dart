@@ -334,6 +334,7 @@ class SourceProvider {
       lastUpdateCheck: DateTime.now(),
       pinned: currentApp?.pinned ?? false,
       categories: currentApp?.categories ?? const [],
+      groups: currentApp?.groups ?? const [],
       releaseDate: apk.releaseDate,
       changeLog: apk.changeLog,
       releaseUrl: apk.releaseUrl,
@@ -388,6 +389,7 @@ class SourceProvider {
       lastUpdateCheck: DateTime.now(),
       pinned: currentApp?.pinned ?? false,
       categories: currentApp?.categories ?? const [],
+      groups: currentApp?.groups ?? const [],
       allowIdChange:
           trackOnly || (source.appIdInferIsOptional && inferAppIdIfOptional),
     );

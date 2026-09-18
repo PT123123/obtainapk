@@ -211,10 +211,10 @@ extension AppsProviderImportExport on AppsProvider {
   }
 
   /// Merges a grouped list (list.json format: `{groups:[{id,name,apps:[]}]}`)
-  /// into the store. Each app is tagged with its group id in
-  /// [App.categories]. Existing apps keep all their other data (pinned,
-  /// installedVersion, additionalSettings, …) — only the group tag is unioned
-  /// in. New apps are added. Safe to call on every startup: it is idempotent.
+  /// into the store. Each app is tagged with its group id in [App.groups].
+  /// Existing apps keep all their other data (pinned, installedVersion,
+  /// additionalSettings, …) — only the group tags are unioned in. New apps are
+  /// added. Safe to call on every startup: it is idempotent.
   ///
   /// Group metadata (`{id,name}`) is persisted to settings so the group
   /// switcher can render its chips without re-fetching.
@@ -229,13 +229,29 @@ extension AppsProviderImportExport on AppsProvider {
       throw ObtainiumError(tr('failedToImport'));
     }
     final groups = decoded['groups'] as List<dynamic>? ?? [];
+
+    // First pass: group ids are needed before the apps are merged, because
+    // older builds stored the group tag inside [App.categories] and that
+    // legacy tag has to be recognised (and moved out) for every app.
     final List<Map<String, String>> groupMeta = [];
-    final List<App> toSave = [];
+    final Set<String> groupIds = <String>{};
     for (final g in groups) {
       if (g is! Map) continue;
       final gid = g['id'] as String?;
       if (gid == null || gid.isEmpty) continue;
+      groupIds.add(gid);
       groupMeta.add({'id': gid, 'name': (g['name'] as String?) ?? gid});
+    }
+
+    // Second pass: collect every app and the full set of groups it belongs to.
+    // An app listed in more than one group must end up with all of its tags
+    // (collecting into a set avoids the last group silently winning).
+    final Map<String, App> parsedApps = {};
+    final Map<String, Set<String>> tagsByAppId = {};
+    for (final g in groups) {
+      if (g is! Map) continue;
+      final gid = g['id'] as String?;
+      if (gid == null || gid.isEmpty) continue;
       final appsList = g['apps'] as List<dynamic>? ?? [];
       for (final a in appsList) {
         if (a is! Map) continue;
@@ -246,21 +262,42 @@ extension AppsProviderImportExport on AppsProvider {
           AppLogger.warn('Skipping unparseable app in group $gid: $e');
           continue;
         }
-        final cats = [...parsed.categories];
-        if (!cats.contains(gid)) cats.add(gid);
-        final existing = apps[parsed.id]?.app;
-        if (existing != null) {
-          final mergedCats = {...existing.categories, ...cats}.toList();
-          // Only rewrite the app if the group tag actually changed, so we never
-          // clobber a user's pinned / renamed / reconfigured app on every launch.
-          if (!_listEquals(existing.categories, mergedCats)) {
-            toSave.add(existing.copyWith(categories: mergedCats));
-          }
-        } else {
-          toSave.add(parsed.copyWith(categories: cats));
-        }
+        parsedApps.putIfAbsent(parsed.id, () => parsed);
+        tagsByAppId.putIfAbsent(parsed.id, () => <String>{}).add(gid);
       }
     }
+
+    final List<App> toSave = [];
+    parsedApps.forEach((id, parsed) {
+      final tags = tagsByAppId[id]!.toList();
+      final existing = apps[id]?.app;
+      if (existing != null) {
+        final mergedGroups = {...existing.groups, ...tags}.toList();
+        // Move any legacy group tag out of categories: the category UI prunes
+        // names it doesn't know about, and a group tag must never be owned by it.
+        final cleanedCategories = existing.categories
+            .where((c) => !groupIds.contains(c))
+            .toList();
+        final groupsChanged = !_listEquals(existing.groups, mergedGroups);
+        final categoriesChanged = !_listEquals(
+          existing.categories,
+          cleanedCategories,
+        );
+        // Only rewrite the app when something actually changed, so we never
+        // clobber a user's pinned / renamed / reconfigured app on every launch.
+        if (groupsChanged || categoriesChanged) {
+          toSave.add(
+            existing.copyWith(
+              groups: mergedGroups,
+              categories: cleanedCategories,
+            ),
+          );
+        }
+      } else {
+        toSave.add(parsed.copyWith(groups: tags));
+      }
+    });
+
     if (toSave.isNotEmpty) {
       await waitForAppsToLoad();
       await saveApps(toSave, onlyIfExists: false, reuseInstalledInfo: true);

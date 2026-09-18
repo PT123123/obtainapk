@@ -360,6 +360,7 @@ class AddAppPageState extends State<AddAppPage> {
       final merged = realApp.copyWith(
         id: placeholder.id,
         categories: placeholder.categories,
+        groups: placeholder.groups,
       );
       await appsProvider.saveApps([merged], onlyIfExists: false);
       unawaited(

@@ -383,30 +383,6 @@ class AppsPageState extends State<AppsPage> {
                     tileMode: true,
                     items: [
                       [
-                        GeneratedFormTextField(
-                          'appName',
-                          label: tr('appName'),
-                          required: false,
-                          value: vals['appName'],
-                        ),
-                      ],
-                      [
-                        GeneratedFormTextField(
-                          'author',
-                          label: tr('author'),
-                          required: false,
-                          value: vals['author'],
-                        ),
-                      ],
-                      [
-                        GeneratedFormTextField(
-                          'appId',
-                          label: tr('appId'),
-                          required: false,
-                          value: vals['appId'],
-                        ),
-                      ],
-                      [
                         GeneratedFormSwitch(
                           'upToDateApps',
                           label: tr('upToDateApps'),
@@ -470,13 +446,11 @@ class AppsPageState extends State<AppsPage> {
     );
     if (result == true) {
       _searchDebounce?.cancel();
+      // Only the switches / source / categories are edited in this sheet. The
+      // free-text query (name, author or ID) lives in the search bar and is
+      // left untouched here.
       filter.setFormValuesFromMap(values);
       filter.categoryFilter = pendingCategories;
-      // Keep the search bar in sync with the name filter the dialog just set,
-      // otherwise it shows stale text and the next keystroke overwrites it.
-      if (searchController.text != filter.nameFilter) {
-        searchController.text = filter.nameFilter;
-      }
       if (mounted) setState(() {});
     }
   }
@@ -484,7 +458,7 @@ class AppsPageState extends State<AppsPage> {
   void onSearchChanged(String value) {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 300), () {
-      filter.nameFilter = value;
+      filter.searchQuery = value;
       if (mounted) setState(() {});
     });
   }
@@ -1261,10 +1235,12 @@ class AppsPageState extends State<AppsPage> {
       existingUpdates,
     );
     // Group switcher (分组切换): narrow the list to the selected group's tag.
+    // Group tags live in [App.groups] (not categories) so the category editor
+    // can never strip them.
     if (_selectedGroup != null) {
       listedApps =
           listedApps
-              .where((a) => a.app.categories.contains(_selectedGroup))
+              .where((a) => a.app.groups.contains(_selectedGroup))
               .toList();
     }
 

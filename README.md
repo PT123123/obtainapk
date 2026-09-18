@@ -49,15 +49,33 @@ Current groups:
   `https://raw.githubusercontent.com/PT123123/obtainapk/main/list.json`
   (with a `ghproxy.com` mirror fallback), and falls back to the bundled
   `assets/list.json` if the network is unavailable. Each app is merged into your
-  store and tagged with its group id in `App.categories`. Existing user apps are
+  store and tagged with its group id in `App.groups`. Existing user apps are
   **never clobbered** — only the group tag is added; your pinned / renamed /
   reconfigured apps are preserved.
+- **Group tags are not categories**: group ids are stored in a dedicated
+  `App.groups` field, deliberately kept out of `App.categories`. Categories are
+  user-managed and anything not registered in the category list gets pruned and
+  persisted away by the category UI — when groups were stored there, simply
+  opening an app's detail page stripped the tag and the app dropped out of its
+  group. Any legacy tag found in `categories` is migrated to `groups` on the
+  next startup.
 - **Group switcher**: a horizontal, clickable row of chips sits above the app
   list — `全部` (all), `mine`, `open`. Tapping a chip filters the list to that
   group. The selection persists across restarts.
 - **Editing**: to change the bundled groups, edit `list.json` at the repo root
   **and** its copy `assets/list.json` (the bundled fallback), then push. The next
   app launch pulls the update.
+
+### App list search and filtering
+
+- **Search bar** — one free-text query for everything: every whitespace
+  separated token has to match the app's **name**, **author** *or* **ID**
+  (case insensitive). There are no separate name/author/ID inputs in the filter
+  sheet (they were removed as redundant).
+- **Filter sheet** (the funnel icon) — only the state/source/category filters
+  that a search query cannot express: whether to include up-to-date apps,
+  whether to include non-installed apps, the app source, and the user
+  categories.
 
 ### App list swipe gestures
 

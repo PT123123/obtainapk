@@ -97,6 +97,15 @@ class App {
   final DateTime? lastUpdateCheck;
   final bool pinned;
   final List<String> categories;
+
+  /// Group tags owned by the remote grouped list (list.json), e.g. `mine`.
+  ///
+  /// Deliberately kept apart from [categories]: categories are user-managed and
+  /// the category editor / [CategorySelector] prune (and persist the pruning of)
+  /// any name that is not in the category registry. While the group tag lived
+  /// in [categories] it was silently stripped as soon as an app's detail page
+  /// was opened, so the app vanished from its group.
+  final List<String> groups;
   final DateTime? releaseDate;
   final String? changeLog;
   final String? releaseUrl;
@@ -118,6 +127,7 @@ class App {
     this.lastUpdateCheck,
     this.pinned = false,
     this.categories = const [],
+    this.groups = const [],
     this.releaseDate,
     this.changeLog,
     this.releaseUrl,
@@ -169,6 +179,7 @@ class App {
     Object? lastUpdateCheck = _sentinel,
     bool? pinned,
     List<String>? categories,
+    List<String>? groups,
     Object? releaseDate = _sentinel,
     Object? changeLog = _sentinel,
     Object? releaseUrl = _sentinel,
@@ -198,6 +209,7 @@ class App {
           : lastUpdateCheck as DateTime?,
       pinned: pinned ?? this.pinned,
       categories: categories ?? List<String>.from(this.categories),
+      groups: groups ?? List<String>.from(this.groups),
       releaseDate: releaseDate == _sentinel
           ? this.releaseDate
           : releaseDate as DateTime?,
@@ -246,6 +258,11 @@ class App {
             : json['category'] != null
             ? [json['category'] as String]
             : [],
+        groups: json['groups'] != null
+            ? (json['groups'] as List<dynamic>)
+                  .map((e) => e.toString())
+                  .toList()
+            : <String>[],
         releaseDate: json['releaseDate'] == null
             ? null
             : DateTime.fromMicrosecondsSinceEpoch(json['releaseDate']),
@@ -284,6 +301,7 @@ class App {
     'lastUpdateCheck': lastUpdateCheck?.microsecondsSinceEpoch,
     'pinned': pinned,
     'categories': categories,
+    'groups': groups,
     'releaseDate': releaseDate?.microsecondsSinceEpoch,
     'changeLog': changeLog,
     'releaseUrl': releaseUrl,
