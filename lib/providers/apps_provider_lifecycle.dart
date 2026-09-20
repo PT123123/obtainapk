@@ -51,9 +51,19 @@ bool isIconCacheUsable({
 
 extension AppsProviderLifecycle on AppsProvider {
   bool _getNaiveStandardVersionDetection(App app, {AppSource? source}) {
-    final resolved =
-        source ??
-        SourceProvider().getSource(app.url, overrideSource: app.overrideSource);
+    AppSource resolved;
+    if (source != null) {
+      resolved = source;
+    } else {
+      try {
+        resolved = SourceProvider().getSource(
+          app.url,
+          overrideSource: app.overrideSource,
+        );
+      } catch (_) {
+        return false;
+      }
+    }
     return app.settings.getBool('naiveStandardVersionDetection') ||
         resolved.naiveStandardVersionDetection;
   }
@@ -181,10 +191,17 @@ extension AppsProviderLifecycle on AppsProvider {
     if (app?.app == null) {
       return false;
     }
-    final source = SourceProvider().getSource(
-      app!.app.url,
-      overrideSource: app.app.overrideSource,
-    );
+    AppSource source;
+    try {
+      source = SourceProvider().getSource(
+        app!.app.url,
+        overrideSource: app.app.overrideSource,
+      );
+    } catch (_) {
+      // Source temporarily unresolvable — conservatively assume version
+      // detection is not possible so the update badge stays visible.
+      return false;
+    }
     final bool isHTMLWithNoVersionDetection =
         (source is HTML &&
         app.app.settings
@@ -312,13 +329,23 @@ extension AppsProviderLifecycle on AppsProvider {
                   (value) => value.copyWith(app: app!),
                   ifAbsent: () => AppInMemory(app!, null, null, null),
                 );
+                // Resolve source type separately — a failure here should
+                // never prevent install-status reconciliation or cause the
+                // app to be removed (it could be a transient network issue
+                // or a URL that temporarily doesn't resolve).
+                String? sourceType;
                 try {
-                  // Try getting the app's source to ensure no invalid apps get loaded
                   final src = sp.getSource(
                     app.url,
                     overrideSource: app.overrideSource,
                   );
-                  final sourceType = src.sourceIdentifier;
+                  sourceType = src.sourceIdentifier;
+                } catch (e) {
+                  AppLogger.info(
+                    'Could not resolve source for ${app.id} during load: $e',
+                  );
+                }
+                try {
                   // If the app is installed, grab its OS data and reconcile install statuses
                   final PackageInfo? installedInfo = installedAppsMap[app.id];
                   // Reconcile differences between the installed and recorded install info
@@ -337,7 +364,7 @@ extension AppsProviderLifecycle on AppsProvider {
                     (value) => value.copyWith(
                       app: app!,
                       installedInfo: installedInfo,
-                      sourceType: sourceType,
+                      sourceType: sourceType ?? value.sourceType,
                     ),
                     ifAbsent: () => AppInMemory(
                       app!,
