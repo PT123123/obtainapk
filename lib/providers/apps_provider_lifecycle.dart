@@ -290,6 +290,13 @@ extension AppsProviderLifecycle on AppsProvider {
       };
       final List<String> removedAppIds = [];
       final List<App> correctedApps = [];
+      // Shared across the concurrent per-app iterations below: the label map is
+      // built at most once per load, and `claimed` keeps two tracked apps from
+      // resolving to the same installed package.
+      final Set<String> claimedInstalledPackages = {};
+      Future<Map<String, String>>? installedLabelsFuture;
+      Future<Map<String, String>> installedLabels() =>
+          installedLabelsFuture ??= getInstalledPackageLabels(installedAppsData);
       // TODO: Replace listSync() with async list().toList()
       final activeAppsDir = await getAppsDir();
       await _healAppsDir(activeAppsDir);
@@ -347,7 +354,30 @@ extension AppsProviderLifecycle on AppsProvider {
                 }
                 try {
                   // If the app is installed, grab its OS data and reconcile install statuses
-                  final PackageInfo? installedInfo = installedAppsMap[app.id];
+                  PackageInfo? installedInfo = installedAppsMap[app.id];
+                  if (installedInfo != null) {
+                    claimedInstalledPackages.add(app.id);
+                  } else if (!app.settings.getBool('trackOnly')) {
+                    // The tracked ID does not match any installed package (an
+                    // inferred/placeholder ID, or a differing applicationId).
+                    // Fall back to matching by app name so an actually
+                    // installed app is not reported as "not installed" (which
+                    // also left it without an icon).
+                    final matched = matchInstalledAppByName(
+                      app,
+                      installedAppsData,
+                      await installedLabels(),
+                      claimedInstalledPackages,
+                    );
+                    if (matched?.packageName != null) {
+                      installedInfo = matched;
+                      claimedInstalledPackages.add(matched!.packageName!);
+                      AppLogger.info(
+                        'Matched ${app.id} to installed package '
+                        '${matched.packageName} by name',
+                      );
+                    }
+                  }
                   // Reconcile differences between the installed and recorded install info
                   final moddedApp = reconcileInstallStatus(app, installedInfo);
                   if (moddedApp != null) {

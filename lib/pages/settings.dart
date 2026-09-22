@@ -1006,11 +1006,6 @@ class _SettingsPageState extends State<SettingsPage> {
         onChanged: (value) => settingsProvider.highlightTouchTargets = value,
       ),
       ToggleTile(
-        label: tr('disableSwipeActions'),
-        value: settingsProvider.disableSwipeActions,
-        onChanged: (value) => settingsProvider.disableSwipeActions = value,
-      ),
-      ToggleTile(
         label: tr('alwaysUsePhoneLayout'),
         value: settingsProvider.alwaysUsePhoneLayout,
         onChanged: (value) => settingsProvider.alwaysUsePhoneLayout = value,

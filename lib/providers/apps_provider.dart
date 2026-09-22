@@ -125,6 +125,12 @@ class AppInMemory {
       app.settings.getBool('refreshBeforeDownload') ||
       (app.apkUrls.isNotEmpty && app.apkUrls.first.value == 'placeholder');
 
+  /// Package name actually present on the device. Normally identical to
+  /// [App.id], but differs when the tracked ID (an inferred or placeholder one)
+  /// did not match the real package and the installed app was matched by name
+  /// instead. Used for launching the installed app.
+  String get installedPackageName => installedInfo?.packageName ?? app.id;
+
   bool get hasMultipleSigners {
     return installedInfo?.signingInfo?.hasMultipleSigners ?? false;
   }
@@ -789,6 +795,103 @@ Future<PackageInfo?> getInstalledInfo(String? packageName) async {
         flags: packageInfoFlags,
       );
     } catch (_) {}
+  }
+  return null;
+}
+
+/// Normalizes an app name/label for comparison: lowercased with every
+/// non-alphanumeric character (CJK kept) stripped, so "My App!" and "my-app"
+/// compare equal.
+String normalizeAppLabel(String s) => s
+    .toLowerCase()
+    .replaceAll(RegExp(r'[^a-z0-9\u4e00-\u9fff]'), '');
+
+/// Cached installed-package-name -> normalized label map. Keyed by the set of
+/// installed package names so it is rebuilt only when the installed app set
+/// actually changes (avoids one platform call per package on every load).
+Map<String, String>? _installedLabelCache;
+Set<String>? _installedLabelCacheKey;
+
+/// Builds (or reuses) the installed-package-name -> normalized label map.
+///
+/// Labels are not part of [PackageInfo], so each one costs a platform call;
+/// the result is cached until the installed package set changes.
+Future<Map<String, String>> getInstalledPackageLabels(
+  List<PackageInfo> installedPackages,
+) async {
+  final key = {
+    for (final p in installedPackages)
+      if (p.packageName != null) p.packageName!,
+  };
+  final cachedKey = _installedLabelCacheKey;
+  final cached = _installedLabelCache;
+  if (cached != null &&
+      cachedKey != null &&
+      cachedKey.length == key.length &&
+      cachedKey.containsAll(key)) {
+    return cached;
+  }
+  final labels = <String, String>{};
+  // Bounded concurrency: firing hundreds of platform calls at once stalls the
+  // platform thread.
+  const batchSize = 12;
+  final names = key.toList();
+  for (var i = 0; i < names.length; i += batchSize) {
+    final batch = names.sublist(
+      i,
+      i + batchSize > names.length ? names.length : i + batchSize,
+    );
+    await Future.wait(
+      batch.map((name) async {
+        try {
+          final label = await packageManager.getApplicationLabel(
+            packageName: name,
+          );
+          if (label != null && label.trim().isNotEmpty) {
+            labels[name] = normalizeAppLabel(label);
+          }
+        } catch (_) {
+          // Unqueryable package (e.g. not visible to us) — skip it.
+        }
+      }),
+    );
+  }
+  _installedLabelCacheKey = key;
+  return _installedLabelCache = labels;
+}
+
+/// Finds the installed package that corresponds to [app] by comparing the app's
+/// display name against installed app labels, so an app whose tracked ID does
+/// not match any installed package still reports as installed instead of
+/// silently showing "not installed" (and losing its icon).
+///
+/// [claimed] holds package names already matched to another tracked app, so two
+/// tracked apps never resolve to the same package. Returns null when nothing
+/// matches confidently.
+PackageInfo? matchInstalledAppByName(
+  App app,
+  List<PackageInfo> installedPackages,
+  Map<String, String> installedLabels,
+  Set<String> claimed,
+) {
+  final wanted = <String>{
+    normalizeAppLabel(app.finalName),
+    normalizeAppLabel(app.name),
+  }.where((e) => e.length >= 4).toSet();
+  if (wanted.isEmpty) return null;
+  // Exact label equality first; only then the looser containment pass, so an
+  // exact match anywhere wins over a partial one.
+  for (final exact in [true, false]) {
+    for (final p in installedPackages) {
+      final name = p.packageName;
+      if (name == null || claimed.contains(name)) continue;
+      final label = installedLabels[name];
+      if (label == null || label.length < 4) continue;
+      final matches = exact
+          ? wanted.contains(label)
+          : wanted.any((w) => label.contains(w) || w.contains(label));
+      if (matches) return p;
+    }
   }
   return null;
 }

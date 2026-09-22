@@ -885,7 +885,7 @@ class _AppPageState extends State<AppPage> {
           borderRadius: BorderRadius.circular(14),
           onTap: () {
             settingsProvider.lightImpact();
-            packageManager.openApp(app.app.id);
+            packageManager.openApp(app.installedPackageName);
           },
           child: icon,
         ),
@@ -936,6 +936,31 @@ class _AppPageState extends State<AppPage> {
     return label;
   }
 
+  /// Notes shown when the on-device package does not line up with the tracked
+  /// app: the installed package was matched by app name (so its ID differs), or
+  /// it is a debug build. Surfaced here rather than in the app list, where an
+  /// unmatched ID used to look like "not installed".
+  List<Widget> _buildInstallMismatchNotes(AppInMemory? app) {
+    final installedPackage = app?.installedInfo?.packageName;
+    if (app == null || installedPackage == null) return const [];
+    final notes = <Widget>[];
+    if (installedPackage != app.app.id) {
+      notes.add(
+        _detailNote(
+          '已安装的包名 $installedPackage 与应用 ID ${app.app.id} 不一致，'
+          '按名称匹配为已安装；更新可能因包名不同而失败',
+        ),
+      );
+    }
+    if (installedPackage.endsWith('.debug')) {
+      notes.add(_detailNote('当前安装的是 debug 版（$installedPackage）'));
+    }
+    if (app.hasMultipleSigners) {
+      notes.add(_detailNote('已安装的应用包含多个签名者'));
+    }
+    return notes;
+  }
+
   List<Widget> _buildVersionInfoSections(AppInMemory? app) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
@@ -950,6 +975,7 @@ class _AppPageState extends State<AppPage> {
         children: [
           if (trackOnly) _detailNote(tr('xIsTrackOnly', args: [tr('app')])),
           if (pseudo) _detailNote(tr('pseudoVersionInUse')),
+          ..._buildInstallMismatchNotes(app),
           Text(
             _installedVersionLabel(app?.app),
             style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -1265,7 +1291,8 @@ class _AppPageState extends State<AppPage> {
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: OutlinedButton.icon(
-                    onPressed: () => packageManager.openApp(app!.app.id),
+                    onPressed: () =>
+                        packageManager.openApp(app!.installedPackageName),
                     icon: const Icon(Icons.launch),
                     label: const Text('Open'),
                   ),

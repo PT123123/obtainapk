@@ -627,7 +627,7 @@ class SettingsProvider with ChangeNotifier {
   }
 
   bool get checkUpdateOnDetailPage {
-    return _getBool('checkUpdateOnDetailPage') ?? false;
+    return _getBool('checkUpdateOnDetailPage') ?? true;
   }
 
   set checkUpdateOnDetailPage(bool value) {
@@ -677,15 +677,6 @@ class SettingsProvider with ChangeNotifier {
 
   set highlightTouchTargets(bool val) {
     prefs?.setBool('highlightTouchTargets', val);
-    notifyListeners();
-  }
-
-  bool get disableSwipeActions {
-    return _getBool('disableSwipeActions') ?? false;
-  }
-
-  set disableSwipeActions(bool val) {
-    prefs?.setBool('disableSwipeActions', val);
     notifyListeners();
   }
 

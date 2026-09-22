@@ -161,11 +161,16 @@ class _AppIconWidgetState extends State<AppIconWidget> {
   @override
   Widget build(BuildContext context) {
     final name = widget.appsProvider.apps[widget.appId]?.name ?? '';
+    // The tracked ID can differ from the real package when the app was matched
+    // by name; launch the package that is actually installed.
+    final installedPackageName =
+        widget.appsProvider.apps[widget.appId]?.installedPackageName ??
+        widget.appId;
     return Semantics(
       label: name,
       button: true,
       onTap: widget.installed
-          ? () => packageManager.openApp(widget.appId)
+          ? () => packageManager.openApp(installedPackageName)
           : null,
       onLongPress: () {
         NavHelper.pushAppPage(
@@ -185,7 +190,7 @@ class _AppIconWidgetState extends State<AppIconWidget> {
         ),
         onDoubleTap: () {
           if (widget.installed) {
-            packageManager.openApp(widget.appId);
+            packageManager.openApp(installedPackageName);
           }
         },
         onLongPress: () {
@@ -236,33 +241,57 @@ class AppListTile extends StatelessWidget {
 
   App get _app => appInMemory.app;
 
+  /// Shared install/update action, previously triggered by right-swipe.
+  void _startInstallOrUpdate(BuildContext context) {
+    settingsProvider.heavyImpact();
+    unawaited(
+      appsProvider
+          .downloadAndInstallLatestApps([
+            _app.id,
+          ], appNavigatorKey.currentContext)
+          .then((res) {
+            if (res.isNotEmpty && context.mounted) {
+              final np = context.read<NotificationsProvider>();
+              np.cancel(updateNotificationId);
+              np.cancel(
+                SilentUpdateAttemptNotification([], id: res[0].hashCode).id,
+              );
+            }
+          })
+          .catchError((e) {
+            if (context.mounted) showError(e, context);
+          }),
+    );
+  }
+
+  /// Refresh a single app (re-fetch latest info), previously left-swipe.
+  void _refreshApp(BuildContext context) {
+    final appId = _app.id;
+    if (appsProvider.areDownloadsRunning()) return;
+    settingsProvider.lightImpact();
+    unawaited(
+      appsProvider.checkUpdate(appId).then((App? updated) {
+        if (context.mounted) {
+          showMessage(
+            updated == null
+                ? '已拉取最新信息，无更新'
+                : '已刷新，最新：${updated.latestVersion}',
+            context,
+          );
+        }
+      }).catchError((e) {
+        if (context.mounted) showError(e, context);
+        return null;
+      }),
+    );
+  }
+
   Widget _updateButton(BuildContext context) {
     final trackOnly = _app.settings.getBool('trackOnly');
     final cs = Theme.of(context).colorScheme;
     final onPressed = appsProvider.areDownloadsRunning()
         ? null
-        : () {
-            settingsProvider.heavyImpact();
-            appsProvider
-                .downloadAndInstallLatestApps([
-                  _app.id,
-                ], appNavigatorKey.currentContext)
-                .then((res) {
-                  if (res.isNotEmpty && context.mounted) {
-                    final np = context.read<NotificationsProvider>();
-                    np.cancel(updateNotificationId);
-                    np.cancel(
-                      SilentUpdateAttemptNotification(
-                        [],
-                        id: res[0].hashCode,
-                      ).id,
-                    );
-                  }
-                })
-                .catchError((e) {
-                  if (context.mounted) showError(e, context);
-                });
-          };
+        : () => _startInstallOrUpdate(context);
     return IconButton.filled(
       onPressed: onPressed,
       tooltip: trackOnly ? tr('markUpdated') : tr('update'),
@@ -324,6 +353,64 @@ class AppListTile extends StatelessWidget {
     final showChangesFn = getChangeLogFn(context, _app);
     final hasUpdate = isAppUpdateable(_app, settingsProvider);
     final isTV = settingsProvider.isTV;
+    final transparent = Colors.transparent.toARGB32();
+    final categories = _app.categories;
+    final List<double> stops = [
+      if (categories.isNotEmpty)
+        ...List.generate(categories.length, (i) => i / categories.length),
+      1.0,
+    ];
+    final appId = _app.id;
+    final installed = _app.installedVersion;
+    final trackOnly = _app.settings.getBool('trackOnly');
+    final canInstall = installed == null && !trackOnly;
+    final canUpdate = hasUpdate && !trackOnly;
+    final cs = Theme.of(context).colorScheme;
+
+    // Overflow menu replacing the former swipe actions (install/update and
+    // refresh), reachable via the "more" button at the trailing edge.
+    final Widget overflowMenu = PopupMenuButton<String>(
+      tooltip: '更多操作',
+      icon: Icon(
+        Icons.more_vert_rounded,
+        color: cs.onSurfaceVariant,
+        semanticLabel: '更多操作',
+      ),
+      onSelected: (value) {
+        if (value == 'installOrUpdate') {
+          if (!appsProvider.areDownloadsRunning()) {
+            _startInstallOrUpdate(context);
+          }
+        } else if (value == 'refresh') {
+          _refreshApp(context);
+        }
+      },
+      itemBuilder: (context) => [
+        if (canInstall || hasUpdate)
+          PopupMenuItem(
+            value: 'installOrUpdate',
+            child: Text(
+              canInstall
+                  ? tr('install')
+                  : trackOnly
+                  ? tr('markUpdated')
+                  : tr('update'),
+            ),
+          ),
+        const PopupMenuItem(
+          value: 'refresh',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.refresh_rounded),
+              SizedBox(width: 12),
+              Text('刷新'),
+            ],
+          ),
+        ),
+      ],
+    );
+
     final Widget trailingRow = LayoutBuilder(
       builder: (context, constraints) => Row(
         mainAxisSize: MainAxisSize.min,
@@ -347,83 +434,15 @@ class AppListTile extends StatelessWidget {
                 showChangesFn: showChangesFn,
               ),
             )
-          else
+          else ...[
             _VersionLabel(
               appInMemory: appInMemory,
               settingsProvider: settingsProvider,
               maxWidth: math.min(constraints.maxWidth / 3, 200),
               showChangesFn: showChangesFn,
             ),
-        ],
-      ),
-    );
-
-    final disableSwipe = settingsProvider.disableSwipeActions;
-
-    final transparent = Colors.transparent.toARGB32();
-    final categories = _app.categories;
-    final List<double> stops = [
-      if (categories.isNotEmpty)
-        ...List.generate(categories.length, (i) => i / categories.length),
-      1.0,
-    ];
-    final appId = _app.id;
-    final installed = _app.installedVersion;
-    final trackOnly = _app.settings.getBool('trackOnly');
-    final canInstall = installed == null && !trackOnly;
-    final canUpdate = hasUpdate && !trackOnly;
-    final cs = Theme.of(context).colorScheme;
-
-    final swipeBackground = canInstall
-        ? Container(
-            color: cs.primaryContainer,
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.only(left: 24),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.install_mobile, color: cs.onPrimaryContainer),
-                const SizedBox(width: 8),
-                Text(
-                  tr('install'),
-                  style: TextStyle(color: cs.onPrimaryContainer),
-                ),
-              ],
-            ),
-          )
-        : canUpdate
-        ? Container(
-            color: cs.primaryContainer,
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.only(left: 24),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.system_update_alt_rounded,
-                  color: cs.onPrimaryContainer,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  tr('update'),
-                  style: TextStyle(color: cs.onPrimaryContainer),
-                ),
-              ],
-            ),
-          )
-        : null;
-
-    // Left-swipe (end -> start) background: "refresh this app" (re-fetch latest).
-    final swipeBackgroundEnd = Container(
-      color: cs.secondaryContainer,
-      alignment: Alignment.centerRight,
-      padding: const EdgeInsets.only(right: 24),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('刷新', style: TextStyle(color: cs.onSecondaryContainer)),
-          const SizedBox(width: 8),
-          Icon(Icons.refresh_rounded, color: cs.onSecondaryContainer),
+            ExcludeFocus(child: overflowMenu),
+          ],
         ],
       ),
     );
@@ -560,72 +579,7 @@ class AppListTile extends StatelessWidget {
           ),
         );
 
-        return disableSwipe || downloadProgress != null
-            ? tileChild
-            : Dismissible(
-                key: ValueKey(appId),
-                // Allow both directions:
-                //  - start -> end (right swipe): install / update
-                //  - end -> start (left swipe): refresh this app (re-fetch latest)
-                direction: DismissDirection.horizontal,
-                background: swipeBackground ?? const SizedBox.shrink(),
-                secondaryBackground: swipeBackgroundEnd,
-                confirmDismiss: (direction) async {
-                  if (direction == DismissDirection.startToEnd) {
-                    // Right swipe: install / update. Surface any failure to the
-                    // user (previously a failed install could fail silently).
-                    if ((canInstall || canUpdate) &&
-                        !appsProvider.areDownloadsRunning()) {
-                      settingsProvider.heavyImpact();
-                      unawaited(
-                        appsProvider
-                            .downloadAndInstallLatestApps([
-                              appId,
-                            ], appNavigatorKey.currentContext)
-                            .then((res) {
-                              if (res.isNotEmpty && context.mounted) {
-                                final np =
-                                    context.read<NotificationsProvider>();
-                                np.cancel(updateNotificationId);
-                                np.cancel(
-                                  SilentUpdateAttemptNotification(
-                                    [],
-                                    id: res[0].hashCode,
-                                  ).id,
-                                );
-                              }
-                            })
-                            .catchError((e) {
-                              if (context.mounted) showError(e, context);
-                              return;
-                            }),
-                      );
-                    }
-                  } else if (direction == DismissDirection.endToStart) {
-                    // Left swipe: refresh this single app (re-fetch latest info).
-                    if (!appsProvider.areDownloadsRunning()) {
-                      settingsProvider.lightImpact();
-                      unawaited(
-                        appsProvider.checkUpdate(appId).then((App? updated) {
-                          if (context.mounted) {
-                            showMessage(
-                              updated == null
-                                  ? '已拉取最新信息，无更新'
-                                  : '已刷新，最新：${updated.latestVersion}',
-                              context,
-                            );
-                          }
-                        }).catchError((e) {
-                          if (context.mounted) showError(e, context);
-                          return null;
-                        }),
-                      );
-                    }
-                  }
-                  return false;
-                },
-                child: tileChild,
-              );
+        return tileChild;
       },
     );
   }
