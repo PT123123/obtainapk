@@ -860,6 +860,23 @@ Future<Map<String, String>> getInstalledPackageLabels(
   return _installedLabelCache = labels;
 }
 
+/// Reads the display label of a single installed package, or null if it cannot
+/// be queried. Labels are not part of [PackageInfo], so this costs a platform
+/// call.
+Future<String?> getInstalledPackageLabel(String packageName) async {
+  try {
+    final label = await packageManager.getApplicationLabel(
+      packageName: packageName,
+    );
+    if (label != null && label.trim().isNotEmpty) {
+      return label;
+    }
+  } catch (_) {
+    // Unqueryable package (e.g. not visible to us) — skip it.
+  }
+  return null;
+}
+
 /// Finds the installed package that corresponds to [app] by comparing the app's
 /// display name against installed app labels, so an app whose tracked ID does
 /// not match any installed package still reports as installed instead of
@@ -877,6 +894,7 @@ PackageInfo? matchInstalledAppByName(
   final wanted = <String>{
     normalizeAppLabel(app.finalName),
     normalizeAppLabel(app.name),
+    if (app.cachedAppLabel != null) normalizeAppLabel(app.cachedAppLabel!),
   }.where((e) => e.length >= 4).toSet();
   if (wanted.isEmpty) return null;
   // Exact label equality first; only then the looser containment pass, so an

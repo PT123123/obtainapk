@@ -149,8 +149,28 @@ class App {
     return n != null && n.trim().isNotEmpty ? n : null;
   }
 
+  /// Real package name of the installed app, learned when the tracked [id]
+  /// matched no installed package and the app was identified by name instead.
+  /// Persisted so install detection survives restarts and app updates, which
+  /// otherwise lose the in-memory installed-label cache.
+  String? get cachedInstalledPackageName {
+    final n = settings.getStringOrNull('installedPackageName');
+    return n != null && n.trim().isNotEmpty ? n : null;
+  }
+
+  /// Real display name of the app, learned from the installed package's label.
+  /// Used as an extra key for name matching and shown when the tracked name is
+  /// unknown (e.g. a repo whose name is blank).
+  String? get cachedAppLabel {
+    final n = settings.getStringOrNull('appLabel');
+    return n != null && n.trim().isNotEmpty ? n : null;
+  }
+
   String get finalName {
-    return overrideName ?? name;
+    final overridden = overrideName;
+    if (overridden != null) return overridden;
+    if (name.trim().isNotEmpty) return name;
+    return cachedAppLabel ?? name;
   }
 
   String? get overrideAuthor {

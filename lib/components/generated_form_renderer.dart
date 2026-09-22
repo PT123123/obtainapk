@@ -169,8 +169,12 @@ class _GeneratedFormState extends State<GeneratedForm> {
       return IconButton(
         icon: const Icon(Icons.open_in_new),
         tooltip: tr('about'),
+        // In-app browser (Custom Tabs) instead of handing the URL to the
+        // system: `externalApplication` resolves per-URL, so a github.com link
+        // could land in WPS/Taobao while a docs.* link opened in the browser.
+        // Custom Tabs always uses a real browser and never gets hijacked.
         onPressed: () => unawaited(
-          launchUrlString(helpUrl, mode: LaunchMode.externalApplication),
+          launchUrlString(helpUrl, mode: LaunchMode.inAppBrowserView),
         ),
       );
     }

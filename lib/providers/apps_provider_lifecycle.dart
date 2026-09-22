@@ -355,27 +355,77 @@ extension AppsProviderLifecycle on AppsProvider {
                 try {
                   // If the app is installed, grab its OS data and reconcile install statuses
                   PackageInfo? installedInfo = installedAppsMap[app.id];
+                  String? learnedLabel;
+                  var learnedCache = false;
                   if (installedInfo != null) {
                     claimedInstalledPackages.add(app.id);
                   } else if (!app.settings.getBool('trackOnly')) {
-                    // The tracked ID does not match any installed package (an
+                    // The tracked ID matched nothing installed (an
                     // inferred/placeholder ID, or a differing applicationId).
-                    // Fall back to matching by app name so an actually
-                    // installed app is not reported as "not installed" (which
-                    // also left it without an icon).
-                    final matched = matchInstalledAppByName(
-                      app,
-                      installedAppsData,
-                      await installedLabels(),
-                      claimedInstalledPackages,
-                    );
-                    if (matched?.packageName != null) {
-                      installedInfo = matched;
-                      claimedInstalledPackages.add(matched!.packageName!);
+                    // 1. Fall back to the real package name learned earlier.
+                    final cachedPackageName = app.cachedInstalledPackageName;
+                    final cachedInfo =
+                        cachedPackageName != null &&
+                            !claimedInstalledPackages.contains(cachedPackageName)
+                        ? installedAppsMap[cachedPackageName]
+                        : null;
+                    if (cachedInfo != null) {
+                      installedInfo = cachedInfo;
+                      claimedInstalledPackages.add(cachedPackageName!);
                       AppLogger.info(
                         'Matched ${app.id} to installed package '
-                        '${matched.packageName} by name',
+                        '$cachedPackageName (cached)',
                       );
+                    } else {
+                      // 2. Match by app name instead, so an actually installed
+                      // app is not reported as "not installed" (which also left
+                      // it without an icon).
+                      final labels = await installedLabels();
+                      final matched = matchInstalledAppByName(
+                        app,
+                        installedAppsData,
+                        labels,
+                        claimedInstalledPackages,
+                      );
+                      if (matched?.packageName != null) {
+                        installedInfo = matched;
+                        learnedLabel = labels[matched!.packageName!];
+                        claimedInstalledPackages.add(matched.packageName!);
+                        AppLogger.info(
+                          'Matched ${app.id} to installed package '
+                          '${matched.packageName} by name',
+                        );
+                      }
+                    }
+                  }
+                  // Remember the real package name / label so later loads — and
+                  // Obtainium updating itself, which wipes the in-memory caches
+                  // — still detect the app as installed even when its tracked
+                  // name is unusable.
+                  final realPackageName = installedInfo?.packageName;
+                  if (realPackageName != null) {
+                    final newSettings = Map<String, dynamic>.from(
+                      app.additionalSettings,
+                    );
+                    if (app.cachedInstalledPackageName != realPackageName) {
+                      newSettings['installedPackageName'] = realPackageName;
+                      learnedCache = true;
+                    }
+                    if (app.cachedAppLabel == null) {
+                      // A blank tracked name makes the app unidentifiable in
+                      // the list; learn the label from the installed package.
+                      if (learnedLabel == null && app.name.trim().isEmpty) {
+                        learnedLabel = await getInstalledPackageLabel(
+                          realPackageName,
+                        );
+                      }
+                      if (learnedLabel != null) {
+                        newSettings['appLabel'] = learnedLabel;
+                        learnedCache = true;
+                      }
+                    }
+                    if (learnedCache) {
+                      app = app.copyWith(additionalSettings: newSettings);
                     }
                   }
                   // Reconcile differences between the installed and recorded install info
@@ -387,6 +437,10 @@ extension AppsProviderLifecycle on AppsProvider {
                     if (moddedApp.installedVersion == null) {
                       removedAppIds.add(moddedApp.id);
                     }
+                  } else if (learnedCache) {
+                    // Nothing else changed, but the learned cache still needs
+                    // to reach disk.
+                    correctedApps.add(app);
                   }
                   // Update the app in memory with install info and corrections
                   apps.update(
