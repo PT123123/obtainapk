@@ -399,6 +399,45 @@ Four concrete implementations:
 The selection logic (in `apps_provider_install.dart`) checks: self-update → `ShizukuInstaller`;
 user has chosen an external installer → `ExternalInstaller`; otherwise → `StockInstaller`.
 
+### App install detection (`matchInstalledAppByName`)
+
+When loading apps, Obtainium needs to determine whether a tracked app is installed on the
+device. The logic in `apps_provider.dart:matchInstalledAppByName` follows a two-pass strategy:
+
+1. **Package name match** (primary): If the tracked app's `id` or `cachedInstalledPackageName`
+   matches an installed package's name directly, it is a confident match.
+
+2. **Name-based fallback** (secondary): When no package-name match succeeds and the app is not
+   marked `trackOnly`, the function falls back to matching by app label/name. This uses
+   `normalizeAppLabel()` (lower-cased, non-alphanumeric/CJK characters stripped) and follows
+   this priority:
+
+   a. **Exact normalized label match**: The installed app's normalized label exactly equals one
+      of the wanted normalized names (`finalName`, `name`, `cachedAppLabel`).
+
+   b. **Prefix/suffix match** (looser): If no exact match, check whether the installed app's
+      normalized label **starts with or ends with** one of the wanted normalized names.
+      This allows "手环X" to match a track named "手环", but prevents "手环管家" from
+      incorrectly matching a track named "手环" (plain `contains` would incorrectly match both).
+
+The `claimed` set prevents two tracked apps from resolving to the same installed package.
+`loadApps()` (`apps_provider_lifecycle.dart`) calls this for each app that fails the
+primary package-name lookup.
+
+### Background update notifications
+
+During background update checks (`bgUpdateCheck` in `apps_provider.dart`), errors are
+collected and notified to the user via `ErrorCheckingUpdatesNotification`. However,
+**benign "source not found" errors do not trigger notifications**:
+
+- `NoReleasesError` — the source returned no releases (may be temporary or URL changed)
+- `NoAPKError` — the source had no downloadable APKs
+
+These are silently logged and skipped, because spamming the notification tray for a
+possibly-temporary source outage is more annoying than useful. The app is simply left
+without an update in the list. All other errors (network failures, rate limits, etc.)
+continue to produce notifications as before.
+
 ### Credentials
 
 Source credentials (e.g. `github-creds`, `gitlab-creds`) are stored in

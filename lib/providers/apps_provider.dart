@@ -897,8 +897,12 @@ PackageInfo? matchInstalledAppByName(
     if (app.cachedAppLabel != null) normalizeAppLabel(app.cachedAppLabel!),
   }.where((e) => e.length >= 4).toSet();
   if (wanted.isEmpty) return null;
-  // Exact label equality first; only then the looser containment pass, so an
+  // Exact label equality first; only then the looser prefix/suffix pass, so an
   // exact match anywhere wins over a partial one.
+  // The prefix/suffix check is one-way: an installed app named "手环管家"
+  // does NOT match a track named "手环" (containment would incorrectly match).
+  // Only when the installed name starts or ends with the track name do we match,
+  // so "手环X" matches "手环" but "手环管家" does not.
   for (final exact in [true, false]) {
     for (final p in installedPackages) {
       final name = p.packageName;
@@ -907,7 +911,7 @@ PackageInfo? matchInstalledAppByName(
       if (label == null || label.length < 4) continue;
       final matches = exact
           ? wanted.contains(label)
-          : wanted.any((w) => label.contains(w) || w.contains(label));
+          : wanted.any((w) => label.startsWith(w) || label.endsWith(w));
       if (matches) return p;
     }
   }
@@ -1533,7 +1537,12 @@ _bgRunUpdateCheck(
             retryAfterXSeconds = minRetryIntervalForThisApp;
           }
         } else {
-          if (err is! RateLimitError) {
+          // Don't notify for "source not found" errors — just log and skip.
+          // These are benign: the app source may be down or the URL changed.
+          // The app will be marked in the list without a disruptive notification.
+          if (err is! RateLimitError &&
+              err is! NoReleasesError &&
+              err is! NoAPKError) {
             toThrow.add(key, err, appName: errors!.appIdNames[key]);
           }
         }
