@@ -240,9 +240,8 @@ extension AppsProviderInstall on AppsProvider {
           receivedBytes: received,
           totalBytes: total,
         );
-        if (prog != null && prevProg != prog) {
-          unawaited(notificationsProvider?.notify(notif));
-        }
+        // Progress is only shown in-app; don't send notification bar updates
+        // during download to avoid spamming the user.
         prevProg = prog;
       }
 
@@ -1765,19 +1764,9 @@ extension AppsProviderInstall on AppsProvider {
         final File downloadedFile = await downloadFileWithRetry(
           fileName,
           true,
-          (double? progress, [int? received, int? total]) {
-            unawaited(
-              notificationsProvider.notify(
-                DownloadNotification(
-                  fileName,
-                  progress?.ceil() ?? 0,
-                  idKey: '${app.id}|$url',
-                  receivedBytes: received,
-                  totalBytes: total,
-                ),
-              ),
-            );
-          },
+          // Progress is only shown in-app; don't send notification bar updates
+          // during download to avoid spamming the user.
+          (double? progress, [int? received, int? total]) {},
           downloadPath,
           app.additionalSettings,
           headers: await SourceProvider()
