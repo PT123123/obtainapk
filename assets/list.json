@@ -76,6 +76,14 @@
           "name": "Bitwarden",
           "additionalSettings": "{\"about\": \"Bitwarden 密码管理器，自构建\"}",
           "preferredApkIndex": 0
+        },
+        {
+          "id": "100000000010",
+          "url": "https://github.com/PT123123/quire-compose",
+          "author": "PT123123",
+          "name": "Quire",
+          "additionalSettings": "{\"about\": \"Quire 笔记，Kotlin + Compose 客户端\"}",
+          "preferredApkIndex": 0
         }
       ]
     },

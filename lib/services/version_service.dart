@@ -322,6 +322,10 @@ bool versionDetectionPossible({
 ///  3. reconcile [realInstalledVersion] against the tracked version;
 ///  4. collapse again in case step 3 produced a version that now matches.
 ///
+/// [installedVersionCode] is the installed package's versionCode, used to
+/// confirm a remote-only numeric build suffix (e.g. `1.6.31+2371` vs an
+/// on-device `1.6.31`) as the same release.
+///
 /// A rolling major-only pre-release tag is never collapsed: it does not encode
 /// the full installed version, so the update must stay visible (the caller
 /// disables version detection for it instead).
@@ -332,13 +336,17 @@ String? reconcileTrackedVersion({
   required String latestVersion,
   required bool versionDetectionIsStandard,
   required bool naiveStandardVersionDetection,
+  int? installedVersionCode,
 }) {
   if (trackedVersion == null) return null;
   var current = trackedVersion;
   var changed = false;
 
-  bool sameRelease(String version) =>
-      installedMatchesRemote(installed: version, remote: latestVersion);
+  bool sameRelease(String version) => installedMatchesRemote(
+    installed: version,
+    remote: latestVersion,
+    installedVersionCode: installedVersionCode,
+  );
 
   void collapseIfSameRelease(String version) {
     if (current == latestVersion) return;

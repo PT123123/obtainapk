@@ -256,6 +256,109 @@ void main() {
     });
   });
 
+  group('installedMatchesRemote with installedVersionCode', () {
+    test('remote-only numeric build suffix is confirmed by the versionCode', () {
+      // Flutter reports versionName "1.6.31" on the device while the release
+      // tag reads "v1.6.31+2371": the build number lives in the versionCode.
+      expect(
+        installedMatchesRemote(
+          installed: '1.6.31',
+          remote: '1.6.31+2371',
+          installedVersionCode: 2371,
+        ),
+        isTrue,
+      );
+      expect(
+        installedMatchesRemote(
+          installed: 'v1.6.31',
+          remote: '1.6.31+2371',
+          installedVersionCode: 2371,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a newer installed build of the same core is not an update', () {
+      expect(
+        installedMatchesRemote(
+          installed: '1.6.31',
+          remote: '1.6.31+2370',
+          installedVersionCode: 2371,
+        ),
+        isTrue,
+      );
+    });
+
+    test('an older installed build stays a distinct (older) build', () {
+      expect(
+        installedMatchesRemote(
+          installed: '1.6.31',
+          remote: '1.6.31+2372',
+          installedVersionCode: 2371,
+        ),
+        isFalse,
+      );
+    });
+
+    test('without a versionCode the conservative behavior holds', () {
+      expect(
+        installedMatchesRemote(installed: '1.6.31', remote: '1.6.31+2371'),
+        isFalse,
+      );
+    });
+
+    test('non-numeric or multi-token metadata is never versionCode-confirmed', () {
+      expect(
+        installedMatchesRemote(
+          installed: '1.0.5',
+          remote: '1.0.5+beta',
+          installedVersionCode: 5,
+        ),
+        isFalse,
+      );
+      expect(
+        installedMatchesRemote(
+          installed: '1.0.5',
+          remote: '1.0.5+20240904.1',
+          installedVersionCode: 1,
+        ),
+        isFalse,
+      );
+    });
+
+    test('conflicting metadata is overridden by a matching versionCode', () {
+      // The on-device versionName says "+1" but the OS reports versionCode 2:
+      // the versionCode is authoritative, so the device is on build 2.
+      expect(
+        installedMatchesRemote(
+          installed: '1.0.5+1',
+          remote: '1.0.5+2',
+          installedVersionCode: 2,
+        ),
+        isTrue,
+      );
+      expect(
+        installedMatchesRemote(
+          installed: '1.0.5+1',
+          remote: '1.0.5+2',
+          installedVersionCode: 1,
+        ),
+        isFalse,
+      );
+    });
+
+    test('different cores never match regardless of versionCode', () {
+      expect(
+        installedMatchesRemote(
+          installed: '1.6.31',
+          remote: '1.6.32+2372',
+          installedVersionCode: 2372,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('isPreReleaseMajorMatch', () {
     test('matches a major-only rolling tag to the installed major', () {
       expect(isPreReleaseMajorMatch('v151_beta', '151.0.7922.47'), isTrue);

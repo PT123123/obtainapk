@@ -15,6 +15,8 @@ This is a customized fork of Obtainium published as **ObtainAPK** (package ID `c
 - **Keep downloaded APKs**: enable *Settings → Keep downloaded APKs* to keep each APK after a successful install in the public `Download/Obtainium` folder instead of silently deleting it. Download notifications also show the exact file path.
 - **Manually maintained app list**: the [`marketplace/apps.json`](./marketplace/apps.json) file holds the app configurations this marketplace offers.
 - **Grouped app list (`list.json`)**: the [`list.json`](./list.json) file at the repo root is the source of truth for the bundled app groups. The app pulls it on every startup (remote URL with mirror fallback, then a bundled copy) and shows a clickable **group switcher** above the app list (`全部` / `mine` / `open`). See [Grouped app list](#grouped-app-list-listjson) below.
+- **App drawer (应用列表侧边栏)**: the app list page has a sidebar (hamburger button in the app bar, or swipe from the left edge) listing every tracked app with its **icon**. Each entry expands to show identifying details: tracked ID, the real on-device package name, how the two were matched, installed/latest versions, source URL and group tags — plus search and one-tap copy of IDs. See [App drawer & install matching cache](#app-drawer--install-matching-cache) below.
+- **Build-number version matching**: a release tagged `1.6.31+2371` is recognized as the *same* build as the on-device `1.6.31` when the installed package's `versionCode` equals the `+` suffix (build tools like Flutter drop the `+N` from the versionName baked into the APK). This stops the permanent "outdated" display / re-install loop for such apps.
 
 ### Using the marketplace list
 
@@ -63,8 +65,28 @@ Current groups:
   list — `全部` (all), `mine`, `open`. Tapping a chip filters the list to that
   group. The selection persists across restarts.
 - **Editing**: to change the bundled groups, edit `list.json` at the repo root
-  **and** its copy `assets/list.json` (the bundled fallback), then push. The next
-  app launch pulls the update.
+  **and** its copy `assets/list.json` (the bundled fallback), then push. The
+  next app launch pulls the update.
+
+### App drawer & install matching cache
+
+The hamburger button in the app-list app bar (or a swipe from the left edge)
+opens a sidebar with the full tracked-app list. Every entry shows the app's
+icon and expands to reveal:
+
+- **跟踪 ID** — the ID this entry is tracked under (a placeholder like
+  `100000000010` for entries that have never been installed through the app);
+- **设备包名** — the real package name on the device, with a one-tap copy button;
+- **匹配状态** — one of `ID 精确匹配` (tracked ID == installed package),
+  `匹配缓存` (the real package name was learned after an install-over and is
+  persisted), `按名称匹配` (identified by display name), or `未安装`;
+- installed / latest versions, source URL and group tags.
+
+This visualizes the matching cache: an app added by URL alone cannot be
+matched to an installed package until it is installed (an install-over is
+enough — the APK's real package ID is adopted and persisted in the app's
+`installedPackageName` / `appLabel` settings), after which the pairing survives
+restarts and self-updates.
 
 ### App list search and filtering
 

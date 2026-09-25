@@ -333,6 +333,46 @@ void main() {
       );
     });
 
+    test('collapses a remote-only build suffix confirmed by the versionCode', () {
+      // The release tag reads 1.6.31+2371 but the on-device versionName is
+      // 1.6.31 (Flutter drops the build number); the versionCode 2371 proves
+      // they are the same build, so the tracked version adopts the latest.
+      expect(
+        reconcileTrackedVersion(
+          trackedVersion: '1.6.31',
+          realInstalledVersion: '1.6.31',
+          latestVersion: '1.6.31+2371',
+          versionDetectionIsStandard: true,
+          naiveStandardVersionDetection: false,
+          installedVersionCode: 2371,
+        ),
+        '1.6.31+2371',
+      );
+      // A genuinely older installed build must NOT collapse.
+      expect(
+        reconcileTrackedVersion(
+          trackedVersion: '1.6.31',
+          realInstalledVersion: '1.6.31',
+          latestVersion: '1.6.31+2372',
+          versionDetectionIsStandard: true,
+          naiveStandardVersionDetection: false,
+          installedVersionCode: 2371,
+        ),
+        isNull,
+      );
+      // Without a versionCode there is no way to confirm — stay put.
+      expect(
+        reconcileTrackedVersion(
+          trackedVersion: '1.6.31',
+          realInstalledVersion: '1.6.31',
+          latestVersion: '1.6.31+2371',
+          versionDetectionIsStandard: true,
+          naiveStandardVersionDetection: false,
+        ),
+        isNull,
+      );
+    });
+
     test('adopts latest when the device version is the same release', () {
       // The #2324 scenario: F-Droid installed the stable build behind
       // Obtainium's back, so the tracked pre-release value must catch up.

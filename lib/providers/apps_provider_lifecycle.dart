@@ -252,6 +252,7 @@ extension AppsProviderLifecycle on AppsProvider {
       latestVersion: app.latestVersion,
       versionDetectionIsStandard: versionDetectionIsStandard,
       naiveStandardVersionDetection: naiveStandardVersionDetection,
+      installedVersionCode: installedInfo?.versionCode,
     );
     if (correctedInstalledVersion != null &&
         correctedInstalledVersion != app.installedVersion) {

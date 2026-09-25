@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/components/app_list_tile.dart';
+import 'package:obtainium/components/app_drawer.dart';
 import 'package:obtainium/utils/string_utils.dart';
 import 'package:obtainium/components/category_editor.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
@@ -1283,6 +1284,9 @@ class AppsPageState extends State<AppsPage> {
       },
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
+        // 侧边栏：可展开的应用列表（图标 + ID / 包名 / 匹配状态等详情）。
+        // 挂在有 AppBar 的这个 Scaffold 上，CustomAppBar 会自动出现抽屉按钮。
+        drawer: appsProvider.apps.isNotEmpty ? const ObtainAppDrawer() : null,
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => FocusManager.instance.primaryFocus?.unfocus(),

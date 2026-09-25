@@ -19,7 +19,10 @@
 //    packaging words or build metadata; a release that carries a qualifier the
 //    installed build does not is a different build.
 //  * Build metadata (`+...`) is significant when the remote carries it, and
-//    packaging noise when only the installed APK carries it.
+//    packaging noise when only the installed APK carries it. Exception: a
+//    plain numeric remote suffix (a build number) is also accepted when the
+//    installed package's versionCode confirms it — build tools like Flutter
+//    drop the "+N" from the on-device versionName.
 //  * Non-ASCII words (e.g. localized suffixes) are kept as tokens and compared
 //    literally instead of being discarded.
 library;
@@ -165,9 +168,17 @@ bool versionsAreCosmeticallyEqual(String a, String b) {
 /// `1.6.15-debug` installed / `1.6.15` published collapsing, while
 /// `1.6.15` installed / `1.6.15-debug` published (and conflicting variants
 /// such as `debug` vs `release`) still surface as an update.
+///
+/// One exception: build tooling commonly drops the `+<buildNumber>` suffix
+/// from the versionName that ends up on the device (Flutter reports
+/// `1.6.31` while the release tag reads `v1.6.31+2371`). When the remote's
+/// metadata is a single plain number that the device's [installedVersionCode]
+/// confirms (equal, or the installed build is newer), the two strings
+/// describe the same release and this returns true.
 bool installedMatchesRemote({
   required String installed,
   required String remote,
+  int? installedVersionCode,
 }) {
   final partsInstalled = _analyze(installed);
   final partsRemote = _analyze(remote);
@@ -177,12 +188,35 @@ bool installedMatchesRemote({
     return false;
   }
   // Metadata present only on the installed side is packaging noise; metadata
-  // present on the remote side is a distinct build and must match.
+  // present on the remote side is a distinct build and must match — unless it
+  // is a plain build number that the installed package's versionCode confirms
+  // (the on-device versionName may have dropped the "+N" suffix).
   if (partsRemote.metadata.isNotEmpty &&
-      !_sameTokens(partsInstalled.metadata, partsRemote.metadata)) {
+      !_sameTokens(partsInstalled.metadata, partsRemote.metadata) &&
+      !_remoteMetadataMatchesVersionCode(
+        partsRemote.metadata,
+        installedVersionCode,
+      )) {
     return false;
   }
   return true;
+}
+
+/// Whether a remote-side build metadata segment that the installed version
+/// string lacks is confirmed by the installed package's versionCode: the
+/// segment must be a single plain number, and the installed build must be the
+/// same number or newer (a newer installed build of the same core is not an
+/// update either).
+bool _remoteMetadataMatchesVersionCode(
+  List<String> remoteMetadata,
+  int? installedVersionCode,
+) {
+  if (installedVersionCode == null || remoteMetadata.length != 1) {
+    return false;
+  }
+  final build = int.tryParse(remoteMetadata.single);
+  if (build == null) return false;
+  return installedVersionCode >= build;
 }
 
 /// Whether [tag] is a major-only pre-release tag (e.g. `v151_beta`) for the
