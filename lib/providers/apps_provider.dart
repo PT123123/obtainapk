@@ -1016,6 +1016,10 @@ class AppsProvider with ChangeNotifier {
   Map<String, AppInMemory> apps = {};
   bool loadingApps = false;
 
+  /// 系统隐私层拦截了包列表（MIUI/HyperOS 的「获取应用列表」权限，
+  /// 详见 PackageVisibilityBanner）。loadApps 时随已安装信息一起刷新。
+  bool packageListRestricted = false;
+
   // Active per-app download cancellation tokens, keyed by app ID.
   final Map<String, CancellationToken> _downloadCancellations = {};
 

@@ -11,6 +11,7 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
+import 'package:obtainium/components/package_visibility_banner.dart';
 import 'package:obtainium/utils/color_utils.dart';
 import 'package:obtainium/providers/app_json_migration.dart';
 import 'package:obtainium/providers/apps_provider.dart';
@@ -285,6 +286,14 @@ extension AppsProviderLifecycle on AppsProvider {
       final sp = SourceProvider();
       final List<List<String>> errors = [];
       final installedAppsData = await getAllInstalledInfo();
+      packageListRestricted = isPackageListRestricted(installedAppsData);
+      if (packageListRestricted) {
+        AppLogger.info(
+          'Only ${installedAppsData.length} installed packages visible — '
+          'listing is likely restricted by the system (MIUI/HyperOS '
+          '「获取应用列表」 permission)',
+        );
+      }
       final Map<String, PackageInfo> installedAppsMap = {
         for (var i in installedAppsData)
           if (i.packageName != null) i.packageName!: i,

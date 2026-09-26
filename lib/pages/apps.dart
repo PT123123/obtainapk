@@ -6,6 +6,7 @@ import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/components/app_list_tile.dart';
 import 'package:obtainium/components/app_drawer.dart';
+import 'package:obtainium/components/package_visibility_banner.dart';
 import 'package:obtainium/utils/string_utils.dart';
 import 'package:obtainium/components/category_editor.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
@@ -1331,6 +1332,13 @@ class AppsPageState extends State<AppsPage> {
                       ),
                     ],
                   ),
+                  if (appsProvider.packageListRestricted)
+                    SliverToBoxAdapter(
+                      child: PackageVisibilityBanner(
+                        onRecheck: () =>
+                            refreshIndicatorKey.currentState?.show(),
+                      ),
+                    ),
                   if (appsProvider.apps.isNotEmpty)
                     _getSearchBarSliver(context, settingsProvider, listedApps),
                   if (appsProvider.apps.isNotEmpty)

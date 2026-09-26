@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/components/app_drawer.dart';
+import 'package:obtainium/components/package_visibility_banner.dart';
 import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/utils/format_utils.dart';
@@ -56,6 +57,10 @@ class _AllAppsPageState extends State<AllAppsPage>
   /// 发起系统卸载后置位；回到前台时据此全量重查列表。
   bool _pendingRecheck = false;
 
+  /// 系统隐私层拦截了包列表（见 PackageVisibilityBanner）；
+  /// 为 true 时回到前台也自动重查，便于授权后自动恢复。
+  bool _restricted = false;
+
   @override
   void initState() {
     super.initState();
@@ -71,7 +76,8 @@ class _AllAppsPageState extends State<AllAppsPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _pendingRecheck) {
+    if (state == AppLifecycleState.resumed &&
+        (_pendingRecheck || _restricted)) {
       _pendingRecheck = false;
       unawaited(_load());
     }
@@ -82,6 +88,7 @@ class _AllAppsPageState extends State<AllAppsPage>
     if (!mounted) return;
     setState(() {
       _packages = packages;
+      _restricted = isPackageListRestricted(packages);
       _labels.clear();
       _labelsLoaded = false;
       _sizes.clear();
@@ -258,11 +265,16 @@ class _AllAppsPageState extends State<AllAppsPage>
                 ),
               ],
               // 压栈路由默认给返回键，会盖掉抽屉按钮；页面切换统一走侧边栏，
-              // 所以这里显式用汉堡按钮。
-              leading: IconButton(
-                icon: const Icon(Icons.menu),
-                tooltip: '打开侧边栏',
-                onPressed: () => Scaffold.maybeOf(context)?.openDrawer(),
+              // 所以这里显式用汉堡按钮。Scaffold.maybeOf 只向上找，必须用
+              // Scaffold 之下的 context（Builder 提供）才能找到本页的
+              // ScaffoldState；State 的 context 在 Scaffold 之上，拿不到。
+              leading: Builder(
+                builder: (drawerContext) => IconButton(
+                  icon: const Icon(Icons.menu),
+                  tooltip: '打开侧边栏',
+                  onPressed: () =>
+                      Scaffold.maybeOf(drawerContext)?.openDrawer(),
+                ),
               ),
             ),
             SliverToBoxAdapter(
@@ -271,6 +283,10 @@ class _AllAppsPageState extends State<AllAppsPage>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (_restricted)
+                      PackageVisibilityBanner(
+                        onRecheck: () => unawaited(_load()),
+                      ),
                     Text(
                       packages == null
                           ? '正在读取应用列表…'
