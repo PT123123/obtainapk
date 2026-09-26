@@ -4,12 +4,15 @@ import 'dart:typed_data';
 
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_package_manager/android_package_manager.dart';
+import 'package:flutter_archive/flutter_archive.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/components/app_drawer.dart';
 import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/utils/format_utils.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// PackageManager 里没有暴露的 ApplicationInfo.flag 常量。
 /// https://developer.android.com/reference/android/content/pm/ApplicationInfo#FLAG_SYSTEM
@@ -30,17 +33,48 @@ class AllAppsPage extends StatefulWidget {
 
 enum _TypeFilter { all, user, system }
 
-class _AllAppsPageState extends State<AllAppsPage> {
+enum _SortMode { name, updateTime, installTime, size }
+
+String _sortModeLabel(_SortMode mode) => switch (mode) {
+  _SortMode.name => '按名称',
+  _SortMode.updateTime => '按更新时间',
+  _SortMode.installTime => '按安装时间',
+  _SortMode.size => '按 APK 大小',
+};
+
+class _AllAppsPageState extends State<AllAppsPage>
+    with WidgetsBindingObserver {
   List<PackageInfo>? _packages;
   final Map<String, String> _labels = {};
   bool _labelsLoaded = false;
+  final Map<String, int> _sizes = {};
+  bool _sizesLoaded = false;
   String _query = '';
   _TypeFilter _filter = _TypeFilter.all;
+  _SortMode _sortMode = _SortMode.name;
+
+  /// 发起系统卸载后置位；回到前台时据此全量重查列表。
+  bool _pendingRecheck = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _pendingRecheck) {
+      _pendingRecheck = false;
+      unawaited(_load());
+    }
   }
 
   Future<void> _load() async {
@@ -50,8 +84,11 @@ class _AllAppsPageState extends State<AllAppsPage> {
       _packages = packages;
       _labels.clear();
       _labelsLoaded = false;
+      _sizes.clear();
+      _sizesLoaded = false;
     });
     await _loadLabels(packages);
+    await _loadSizes(packages);
   }
 
   /// 应用名是每包一次平台调用；按 [getInstalledPackageLabels] 相同的批次限流，
@@ -87,6 +124,33 @@ class _AllAppsPageState extends State<AllAppsPage> {
     if (mounted) setState(() => _labelsLoaded = true);
   }
 
+  /// 主 APK 大小也是每包一次文件系统调用（多数应用可读，APEX/受限包会抛错），
+  /// 同样分批渐进加载；读不到的包不进表，排序时排在最后。
+  Future<void> _loadSizes(List<PackageInfo> packages) async {
+    const batchSize = 24;
+    final targets = [
+      for (final p in packages)
+        if (p.packageName != null && p.applicationInfo?.sourceDir != null) p,
+    ];
+    for (var i = 0; i < targets.length; i += batchSize) {
+      final batch = targets.sublist(
+        i,
+        i + batchSize > targets.length ? targets.length : i + batchSize,
+      );
+      await Future.wait(
+        batch.map((p) async {
+          try {
+            final size = await File(p.applicationInfo!.sourceDir!).length();
+            if (size > 0) _sizes[p.packageName!] = size;
+          } catch (_) {}
+        }),
+      );
+      if (!mounted) return;
+      setState(() {});
+    }
+    if (mounted) setState(() => _sizesLoaded = true);
+  }
+
   bool _isSystem(PackageInfo p) =>
       ((p.applicationInfo?.flags ?? 0) & _flagSystem) != 0 || p.isApex == true;
 
@@ -118,13 +182,30 @@ class _AllAppsPageState extends State<AllAppsPage> {
     }).toList();
     // 用户应用排在系统应用前面；名称加载中按包名排（顺序稳定），全部加载完
     // 再按显示名重排一次。
-    final byName = _labelsLoaded
-        ? (PackageInfo p) => _displayName(p).toLowerCase()
-        : (PackageInfo p) => p.packageName?.toLowerCase() ?? '';
+    String key(PackageInfo p) => _labelsLoaded
+        ? _displayName(p).toLowerCase()
+        : p.packageName?.toLowerCase() ?? '';
+    int compare(PackageInfo a, PackageInfo b) {
+      switch (_sortMode) {
+        case _SortMode.name:
+          return key(a).compareTo(key(b));
+        case _SortMode.updateTime:
+          return (b.lastUpdateTime ?? 0).compareTo(a.lastUpdateTime ?? 0);
+        case _SortMode.installTime:
+          return (b.firstInstallTime ?? 0).compareTo(a.firstInstallTime ?? 0);
+        case _SortMode.size:
+          // 没读到大小的（还在加载/权限受限）排最后。
+          final sizeCmp = (_sizes[a.packageName] ?? -1).compareTo(
+            _sizes[b.packageName] ?? -1,
+          );
+          return sizeCmp != 0 ? -sizeCmp : key(a).compareTo(key(b));
+      }
+    }
+
     visible.sort((a, b) {
       final sys = (_isSystem(a) ? 1 : 0) - (_isSystem(b) ? 1 : 0);
       if (sys != 0) return sys;
-      return byName(a).compareTo(byName(b));
+      return compare(a, b);
     });
     return visible;
   }
@@ -135,8 +216,11 @@ class _AllAppsPageState extends State<AllAppsPage> {
       useSafeArea: true,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) =>
-          _AppDetailSheet(info: info, displayName: _displayName(info)),
+      builder: (_) => _AppDetailSheet(
+        info: info,
+        displayName: _displayName(info),
+        onUninstallStarted: (packageName) => _pendingRecheck = true,
+      ),
     );
   }
 
@@ -158,6 +242,21 @@ class _AllAppsPageState extends State<AllAppsPage> {
           slivers: [
             CustomAppBar(
               title: '全部应用',
+              actions: [
+                PopupMenuButton<_SortMode>(
+                  tooltip: '排序方式',
+                  icon: const Icon(Icons.sort_rounded),
+                  onSelected: (mode) => setState(() => _sortMode = mode),
+                  itemBuilder: (context) => [
+                    for (final mode in _SortMode.values)
+                      CheckedPopupMenuItem(
+                        value: mode,
+                        checked: mode == _sortMode,
+                        child: Text(_sortModeLabel(mode)),
+                      ),
+                  ],
+                ),
+              ],
               // 压栈路由默认给返回键，会盖掉抽屉按钮；页面切换统一走侧边栏，
               // 所以这里显式用汉堡按钮。
               leading: IconButton(
@@ -176,7 +275,8 @@ class _AllAppsPageState extends State<AllAppsPage> {
                       packages == null
                           ? '正在读取应用列表…'
                           : '共 ${packages.length} 个应用 · 用户 $userCount · 系统 $systemCount'
-                              '${_labelsLoaded ? '' : ' · 正在读取应用名称…'}',
+                              '${_labelsLoaded ? '' : ' · 正在读取应用名称…'}'
+                              '${_sortMode == _SortMode.size && !_sizesLoaded ? ' · 正在读取大小…' : ''}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
@@ -251,6 +351,7 @@ class _AllAppsPageState extends State<AllAppsPage> {
                     info: info,
                     displayName: _displayName(info),
                     isSystem: _isSystem(info),
+                    sizeBytes: _sizes[info.packageName],
                     onTap: () => _showDetails(info),
                   );
                 },
@@ -324,12 +425,14 @@ class _AllAppTile extends StatelessWidget {
     required this.info,
     required this.displayName,
     required this.isSystem,
+    required this.sizeBytes,
     required this.onTap,
   });
 
   final PackageInfo info;
   final String displayName;
   final bool isSystem;
+  final int? sizeBytes;
   final VoidCallback onTap;
 
   @override
@@ -341,7 +444,8 @@ class _AllAppTile extends StatelessWidget {
       subtitle: Text(
         '${info.packageName}\n'
         'v${info.versionName ?? '?'}'
-        '${info.longVersionCode != null ? ' (${info.longVersionCode})' : ''}',
+        '${info.longVersionCode != null ? ' (${info.longVersionCode})' : ''}'
+        '${sizeBytes != null ? ' · ${formatBytes(sizeBytes!)}' : ''}',
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
@@ -358,13 +462,88 @@ class _AllAppTile extends StatelessWidget {
   }
 }
 
+/// 与 AppsProvider.getStorageRootPath 相同的算法：从应用专属存储目录反推
+/// 共享存储根（正常为 /storage/emulated/0），失败时退回最常见的路径。
+Future<String> _storageRootPath() async {
+  try {
+    return '/${(await getAppStorageDir()).uri.pathSegments.sublist(0, 3).join('/')}';
+  } catch (_) {
+    return '/storage/emulated/0';
+  }
+}
+
+String _safeFileName(String name) =>
+    name.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), '_').trim();
+
+/// 把已安装应用的 APK 导出到 `Download/Obtainium`（「下载的 APK」页会列出该目录）。
+///
+/// 无 split 时直接复制主 APK；有 split 时打成 zip——只导出主 APK 对 split
+/// 应用装不上（缺 density/ABI 配置），宁可打包也别产出半成品。split 与主 APK
+/// 通常同目录，此时用 createFromFiles 免去中转拷贝；否则退回暂存目录。
+Future<File> exportAppApk(PackageInfo info, String displayName) async {
+  final appInfo = info.applicationInfo!;
+  final sourceDir = appInfo.sourceDir;
+  if (sourceDir == null) {
+    throw Exception('该应用没有可读取的 APK 文件');
+  }
+  final destDirPath = '${await _storageRootPath()}/Download/Obtainium';
+  await Directory(destDirPath).create(recursive: true);
+  final baseName = _safeFileName(
+    '$displayName-v${info.versionName ?? info.longVersionCode ?? '?'}',
+  );
+  final splits = appInfo.splitSourceDirs ?? const <String>[];
+  if (splits.isEmpty) {
+    final dest = File('$destDirPath/$baseName.apk');
+    if (!dest.existsSync()) {
+      await File(sourceDir).copy(dest.path);
+    }
+    return dest;
+  }
+  final files = <File>[File(sourceDir), for (final s in splits) File(s)];
+  final dest = File('$destDirPath/$baseName-apks.zip');
+  final parents = files.map((f) => f.parent.path).toSet();
+  if (parents.length == 1) {
+    await ZipFile.createFromFiles(
+      sourceDir: files.first.parent,
+      files: files,
+      zipFile: dest,
+    );
+  } else {
+    final staging = Directory(
+      '${(await getTemporaryDirectory()).path}/apk-export/${info.packageName}',
+    );
+    if (staging.existsSync()) {
+      staging.deleteSync(recursive: true);
+    }
+    await staging.create(recursive: true);
+    for (final f in files) {
+      await f.copy('${staging.path}/${f.path.split('/').last}');
+    }
+    try {
+      await ZipFile.createFromDirectory(sourceDir: staging, zipFile: dest);
+    } finally {
+      try {
+        staging.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+  }
+  return dest;
+}
+
 /// 单个应用的详细参数面板（底部弹层）。基础参数来自列表数据；权限与安装来源
 /// 需要额外的平台调用，进面板后再异步补上。
 class _AppDetailSheet extends StatefulWidget {
-  const _AppDetailSheet({required this.info, required this.displayName});
+  const _AppDetailSheet({
+    required this.info,
+    required this.displayName,
+    required this.onUninstallStarted,
+  });
 
   final PackageInfo info;
   final String displayName;
+
+  /// 发起系统卸载前回调（用于列表页在回到前台后自动重查）。
+  final void Function(String packageName) onUninstallStarted;
 
   @override
   State<_AppDetailSheet> createState() => _AppDetailSheetState();
@@ -372,8 +551,12 @@ class _AppDetailSheet extends StatefulWidget {
 
 class _AppDetailSheetState extends State<_AppDetailSheet> {
   late final Future<(List<String>?, String?)> _extra;
+  bool _exporting = false;
 
   ApplicationInfo get _appInfo => widget.info.applicationInfo!;
+
+  bool get _isSystemApp =>
+      ((_appInfo.flags & _flagSystem) != 0) || widget.info.isApex == true;
 
   @override
   void initState() {
@@ -435,6 +618,66 @@ class _AppDetailSheetState extends State<_AppDetailSheet> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('无法打开系统应用信息')));
+      }
+    }
+  }
+
+  Future<void> _exportApk() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final file = await exportAppApk(widget.info, widget.displayName);
+      if (!mounted) return;
+      final mimeType = file.path.toLowerCase().endsWith('.zip')
+          ? 'application/zip'
+          : 'application/vnd.android.package-archive';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已导出到 ${file.path}'),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: '分享',
+            onPressed: () => unawaited(
+              SharePlus.instance.share(
+                ShareParams(files: [XFile(file.path, mimeType: mimeType)]),
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) showMessage(e, context, isError: true);
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _uninstall() async {
+    final packageName = widget.info.packageName;
+    if (packageName == null) return;
+    final confirmed = await showConfirmDialog(
+      context,
+      title: '卸载应用',
+      content: Text(
+        '确定要卸载 ${widget.displayName}（$packageName）吗？应用数据会一并删除。',
+      ),
+      confirmText: '卸载',
+    );
+    if (!confirmed || !mounted) return;
+    Navigator.of(context).pop();
+    widget.onUninstallStarted(packageName);
+    // android_intent_plus 只原样透传未知 action，这里必须用完整常量。
+    final intent = AndroidIntent(
+      action: 'android.intent.action.DELETE',
+      data: 'package:$packageName',
+    );
+    try {
+      await intent.launch();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('无法启动系统卸载界面')));
       }
     }
   }
@@ -518,22 +761,57 @@ class _AppDetailSheetState extends State<_AppDetailSheet> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _openApp,
-                    icon: const Icon(Icons.open_in_new, size: 16),
-                    label: const Text('打开应用'),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _openApp,
+                        icon: const Icon(Icons.open_in_new, size: 16),
+                        label: const Text('打开应用'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _openSystemAppInfo,
+                        icon: const Icon(Icons.settings_outlined, size: 16),
+                        label: const Text('系统信息'),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _openSystemAppInfo,
-                    icon: const Icon(Icons.settings_outlined, size: 16),
-                    label: const Text('系统信息'),
-                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _exporting ? null : _exportApk,
+                        icon: _exporting
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.save_alt_rounded, size: 16),
+                        label: Text(_exporting ? '导出中…' : '导出 APK'),
+                      ),
+                    ),
+                    if (!_isSystemApp) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _uninstall,
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 16,
+                          ),
+                          label: const Text('卸载'),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),

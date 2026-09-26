@@ -97,14 +97,12 @@ class _NavTile extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.subtitle,
-    this.trailing,
     this.active = false,
   });
 
   final IconData icon;
   final String label;
   final String? subtitle;
-  final Widget? trailing;
   final VoidCallback onTap;
 
   /// 是否为当前所在页；高亮成 M3 的 selected ListTile 样式。
@@ -122,7 +120,6 @@ class _NavTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-      trailing: trailing,
       selected: active,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       onTap: onTap,
