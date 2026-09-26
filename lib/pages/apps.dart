@@ -1284,9 +1284,9 @@ class AppsPageState extends State<AppsPage> {
       },
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
-        // 侧边栏：可展开的应用列表（图标 + ID / 包名 / 匹配状态等详情）。
+        // 侧边栏：页面切换器（应用列表 / 全部应用 / mymail）。
         // 挂在有 AppBar 的这个 Scaffold 上，CustomAppBar 会自动出现抽屉按钮。
-        drawer: appsProvider.apps.isNotEmpty ? const ObtainAppDrawer() : null,
+        drawer: const ObtainAppDrawer(),
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => FocusManager.instance.primaryFocus?.unfocus(),

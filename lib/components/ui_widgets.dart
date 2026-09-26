@@ -493,10 +493,19 @@ class ActionListTile extends StatelessWidget {
 }
 
 class CustomAppBar extends StatelessWidget {
-  const CustomAppBar({super.key, required this.title, this.actions});
+  const CustomAppBar({
+    super.key,
+    required this.title,
+    this.actions,
+    this.leading,
+  });
 
   final String title;
   final List<Widget>? actions;
+
+  /// Overrides the implied leading widget (back button); used by pushed pages
+  /// whose navigation lives in the drawer (e.g. All apps) instead of back.
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -504,7 +513,8 @@ class CustomAppBar extends StatelessWidget {
       pinned: true,
       // Root pages have nothing to pop so no leading is shown; pushed pages
       // (Settings, Add app) get the standard back button.
-      automaticallyImplyLeading: true,
+      automaticallyImplyLeading: leading == null,
+      leading: leading,
       title: Text(title),
       actions: actions,
     );

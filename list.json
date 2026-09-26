@@ -84,6 +84,14 @@
           "name": "Quire",
           "additionalSettings": "{\"about\": \"Quire 笔记，Kotlin + Compose 客户端\"}",
           "preferredApkIndex": 0
+        },
+        {
+          "id": "100000000011",
+          "url": "https://github.com/PT123123/mymail",
+          "author": "PT123123",
+          "name": "mymail",
+          "additionalSettings": "{\"about\": \"w-mail，Windows + Android 双端原生邮件客户端\"}",
+          "preferredApkIndex": 0
         }
       ]
     },

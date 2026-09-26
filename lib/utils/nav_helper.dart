@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/pages/add_app.dart';
+import 'package:obtainium/pages/all_apps.dart';
 import 'package:obtainium/pages/app.dart';
 import 'package:obtainium/pages/logs.dart';
 import 'package:obtainium/pages/settings.dart';
@@ -59,6 +60,15 @@ class NavHelper {
       MaterialPageRoute(
         traversalEdgeBehavior: traversalEdgeBehaviorFor(context),
         builder: (_) => const LogsPage(),
+      ),
+    );
+  }
+
+  static void pushAllAppsPage(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        traversalEdgeBehavior: traversalEdgeBehaviorFor(context),
+        builder: (_) => const AllAppsPage(),
       ),
     );
   }
