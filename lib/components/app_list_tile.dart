@@ -366,6 +366,14 @@ class AppListTile extends StatelessWidget {
     final canInstall = installed == null && !trackOnly;
     final canUpdate = hasUpdate && !trackOnly;
     final cs = Theme.of(context).colorScheme;
+    final density = settingsProvider.appListDensity;
+    final isCompact = density == AppListDensity.compact;
+    final isDense = density == AppListDensity.dense;
+    final isStandard = density == AppListDensity.standard;
+    // Standard density moves the version/date block under the author line, so
+    // the trailing slot only carries the action buttons and the app name gets
+    // the full row width (long names were ellipsized away before).
+    final versionInSubtitle = !isTV && !isDense && !isCompact;
 
     // Overflow menu replacing the former swipe actions (install/update and
     // refresh), reachable via the "more" button at the trailing edge.
@@ -411,41 +419,54 @@ class AppListTile extends StatelessWidget {
       ],
     );
 
-    final Widget trailingRow = LayoutBuilder(
-      builder: (context, constraints) => Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (hasUpdate) ...[
-            // On TV, keep the tile a single focus stop: updating is available
-            // from the detail pane and the list's update banner.
-            if (isTV)
-              ExcludeFocus(child: _updateButton(context))
-            else
-              _updateButton(context),
-            const SizedBox(width: 8),
-          ],
-          if (isTV)
-            ExcludeFocus(
-              child: _VersionLabel(
-                appInMemory: appInMemory,
-                settingsProvider: settingsProvider,
-                maxWidth: math.min(constraints.maxWidth / 3, 200),
-                showChangesFn: showChangesFn,
-              ),
-            )
-          else ...[
-            _VersionLabel(
-              appInMemory: appInMemory,
-              settingsProvider: settingsProvider,
-              maxWidth: math.min(constraints.maxWidth / 3, 200),
-              showChangesFn: showChangesFn,
+    final Widget trailingRow = versionInSubtitle
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (hasUpdate) ...[
+                _updateButton(context),
+                const SizedBox(width: 8),
+              ],
+              ExcludeFocus(child: overflowMenu),
+            ],
+          )
+        : LayoutBuilder(
+            builder: (context, constraints) => Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (hasUpdate) ...[
+                  // On TV, keep the tile a single focus stop: updating is
+                  // available from the detail pane and the list's update
+                  // banner.
+                  if (isTV)
+                    ExcludeFocus(child: _updateButton(context))
+                  else
+                    _updateButton(context),
+                  const SizedBox(width: 8),
+                ],
+                if (isTV)
+                  ExcludeFocus(
+                    child: _VersionLabel(
+                      appInMemory: appInMemory,
+                      settingsProvider: settingsProvider,
+                      maxWidth: math.min(constraints.maxWidth / 3, 200),
+                      showChangesFn: showChangesFn,
+                    ),
+                  )
+                else ...[
+                  _VersionLabel(
+                    appInMemory: appInMemory,
+                    settingsProvider: settingsProvider,
+                    maxWidth: math.min(constraints.maxWidth / 3, 200),
+                    showChangesFn: showChangesFn,
+                  ),
+                  ExcludeFocus(child: overflowMenu),
+                ],
+              ],
             ),
-            ExcludeFocus(child: overflowMenu),
-          ],
-        ],
-      ),
-    );
+          );
 
     // TODO: Consider using the `child` parameter of ValueListenableBuilder
     // to cache the built widget tree and avoid rebuilds when only the
@@ -488,10 +509,6 @@ class AppListTile extends StatelessWidget {
                     ),
             ),
             child: () {
-              final density = settingsProvider.appListDensity;
-              final isCompact = density == AppListDensity.compact;
-              final isDense = density == AppListDensity.dense;
-              final isStandard = density == AppListDensity.standard;
               final tile = ListTile(
                 autofocus: autofocus,
                 shape: borderRadius != null
@@ -508,7 +525,7 @@ class AppListTile extends StatelessWidget {
                 visualDensity: isStandard
                     ? null
                     : const VisualDensity(horizontal: -4, vertical: -4),
-                minVerticalPadding: isDense ? 0 : (isCompact ? 2 : 4),
+                minVerticalPadding: isDense ? 0 : (isCompact ? 2 : 10),
                 dense: isDense,
                 leading: settingsProvider.isTV || isDense
                     ? null
@@ -516,14 +533,17 @@ class AppListTile extends StatelessWidget {
                         appId: _app.id,
                         installed: appInMemory.installedInfo != null,
                         appsProvider: appsProvider,
-                        size: isCompact ? 36 : 44,
+                        size: isCompact ? 36 : 52,
                       ),
                 onLongPress: () {
                   settingsProvider.selectionClick();
                   onToggleSelected();
                 },
+                // Two lines before ellipsizing: long names (repo-style names,
+                // CJK titles) were getting cut off on narrow screens because
+                // the trailing version/button cluster eats a third of the row.
                 title: Text(
-                  maxLines: 1,
+                  maxLines: 2,
                   appInMemory.name,
                   style: TextStyle(
                     overflow: TextOverflow.ellipsis,
@@ -534,13 +554,28 @@ class AppListTile extends StatelessWidget {
                 ),
                 subtitle: isDense
                     ? null
-                    : _app.hasPendingRepoRename
-                    ? Column(
+                    : Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [_authorText(), _repoMovedRow(context)],
-                      )
-                    : _authorText(),
+                        children: [
+                          _authorText(),
+                          if (_app.hasPendingRepoRename)
+                            _repoMovedRow(context),
+                          // Standard density: version/date sit under the
+                          // author instead of the trailing slot (see
+                          // [versionInSubtitle]).
+                          if (versionInSubtitle) ...[
+                            const SizedBox(height: 2),
+                            _VersionLabel(
+                              appInMemory: appInMemory,
+                              settingsProvider: settingsProvider,
+                              maxWidth: 200,
+                              showChangesFn: showChangesFn,
+                              alignEnd: false,
+                            ),
+                          ],
+                        ],
+                      ),
                 trailing: downloadProgress != null
                     ? DownloadProgressTrailing(
                         progress: downloadProgress,
@@ -952,11 +987,17 @@ class _VersionLabel extends StatelessWidget {
   final double maxWidth;
   final VoidCallback? showChangesFn;
 
+  /// Right-aligned inside the trailing slot by default; the standard-density
+  /// tile renders the label under the author line instead (left-aligned) so
+  /// the app name gets the full row width.
+  final bool alignEnd;
+
   const _VersionLabel({
     required this.appInMemory,
     required this.settingsProvider,
     required this.maxWidth,
     required this.showChangesFn,
+    this.alignEnd = true,
   });
 
   @override
@@ -968,6 +1009,7 @@ class _VersionLabel extends StatelessWidget {
         : Theme.of(context).colorScheme.onSurfaceVariant;
     final highlight = settingsProvider.highlightTouchTargets;
     final isDense = settingsProvider.appListDensity == AppListDensity.dense;
+    final align = alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start;
 
     Widget content = Padding(
       padding: isDense
@@ -975,7 +1017,7 @@ class _VersionLabel extends StatelessWidget {
           : const EdgeInsets.all(4),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: align,
         children: [
           Container(
             constraints: BoxConstraints(maxWidth: maxWidth),
@@ -992,7 +1034,7 @@ class _VersionLabel extends StatelessWidget {
                 child: Text(
                   installedVersionText(app),
                   overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
+                  textAlign: alignEnd ? TextAlign.end : TextAlign.start,
                   style: TextStyle(
                     fontStyle: isVersionPseudo(app) ? FontStyle.italic : null,
                     color: updateColor,
