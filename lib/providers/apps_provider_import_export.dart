@@ -216,9 +216,18 @@ extension AppsProviderImportExport on AppsProvider {
   /// additionalSettings, …) — only the group tags are unioned in. New apps are
   /// added. Safe to call on every startup: it is idempotent.
   ///
+  /// Existing apps are matched by ID first, then by URL: a list entry whose
+  /// placeholder ID was replaced by the real package name on install (or a
+  /// manually re-added URL) must not be added a second time. As a repair for
+  /// lists duplicated by earlier builds, same-URL placeholder entries that
+  /// shadow a real-ID entry are removed before merging.
+  ///
   /// Group metadata (`{id,name}`) is persisted to settings so the group
   /// switcher can render its chips without re-fetching.
   Future<void> mergeGroupedList(String raw) async {
+    // The startup call races [loadApps]; the store must be fully loaded before
+    // the lookups below or every existing app would look missing.
+    await waitForAppsToLoad();
     dynamic decoded;
     try {
       decoded = jsonDecode(raw);
@@ -267,10 +276,52 @@ extension AppsProviderImportExport on AppsProvider {
       }
     }
 
+    // Repair pass for lists duplicated by earlier builds: a placeholder-ID
+    // app whose URL is already tracked (typically under the real package name
+    // the ID was renamed to on install) shows the same app twice. Keep the
+    // real-ID entry — or, when every entry for the URL is still a placeholder,
+    // the first one — and drop the rest. Same-URL entries with two distinct
+    // real package IDs are legitimate (one repo, two packages) and untouched.
+    final List<String> duplicateIdsToRemove = [];
+    final Map<String, String> carriedInstalledPackage = {};
+    {
+      final idsByUrl = <String, List<String>>{};
+      apps.forEach((id, e) {
+        idsByUrl.putIfAbsent(e.app.url, () => []).add(id);
+      });
+      idsByUrl.forEach((url, ids) {
+        final (keeperId, removeIds) = resolveSameUrlDuplicates(
+          ids,
+          (id) => isTempId(apps[id]!.app),
+        );
+        for (final id in removeIds) {
+          final dup = apps[id]!.app;
+          final dupPackage = dup.cachedInstalledPackageName;
+          if (dupPackage != null &&
+              apps[keeperId]!.app.cachedInstalledPackageName == null) {
+            carriedInstalledPackage[keeperId] = dupPackage;
+          }
+          duplicateIdsToRemove.add(id);
+          AppLogger.info(
+            'Removing duplicate tracked app $id (same URL as $keeperId): $url',
+          );
+        }
+      });
+    }
+    if (duplicateIdsToRemove.isNotEmpty) {
+      await removeApps(duplicateIdsToRemove);
+    }
+
     final List<App> toSave = [];
+    // Index the surviving store by URL so the ID lookup below can fall back
+    // for list entries whose stored ID differs from the one in list.json.
+    final existingByUrl = <String, App>{};
+    apps.forEach((_, e) {
+      existingByUrl.putIfAbsent(e.app.url, () => e.app);
+    });
     parsedApps.forEach((id, parsed) {
       final tags = tagsByAppId[id]!.toList();
-      final existing = apps[id]?.app;
+      final existing = apps[id]?.app ?? existingByUrl[parsed.url];
       if (existing != null) {
         final mergedGroups = {...existing.groups, ...tags}.toList();
         // Move any legacy group tag out of categories: the category UI prunes
@@ -283,15 +334,26 @@ extension AppsProviderImportExport on AppsProvider {
           existing.categories,
           cleanedCategories,
         );
+        final carriedPackage =
+            carriedInstalledPackage[existing.id] ??
+            existing.cachedInstalledPackageName;
+        final packageChanged = carriedPackage != existing.cachedInstalledPackageName;
         // Only rewrite the app when something actually changed, so we never
         // clobber a user's pinned / renamed / reconfigured app on every launch.
-        if (groupsChanged || categoriesChanged) {
-          toSave.add(
-            existing.copyWith(
-              groups: mergedGroups,
-              categories: cleanedCategories,
-            ),
+        if (groupsChanged || categoriesChanged || packageChanged) {
+          var merged = existing.copyWith(
+            groups: mergedGroups,
+            categories: cleanedCategories,
           );
+          if (packageChanged) {
+            merged = merged.copyWith(
+              additionalSettings: {
+                ...merged.additionalSettings,
+                'installedPackageName': carriedPackage,
+              },
+            );
+          }
+          toSave.add(merged);
         }
       } else {
         toSave.add(parsed.copyWith(groups: tags));
@@ -385,4 +447,27 @@ class ExportSchema {
     'apps': apps,
     'settings': settings,
   };
+}
+
+/// Decides which of the tracked-app IDs sharing one URL to keep and which to
+/// drop, so the grouped-list merge can repair the placeholder-ID duplicates
+/// earlier builds produced (the placeholder was renamed to the real package
+/// name on install, and the next startup merge re-added the placeholder).
+///
+/// A real (non-placeholder) ID always wins — it is the one carrying install
+/// state. When every ID is a placeholder the first one is kept. Two distinct
+/// real IDs never count as duplicates: one repo legitimately serves two
+/// packages.
+(String, List<String>) resolveSameUrlDuplicates(
+  List<String> ids,
+  bool Function(String id) isPlaceholderId,
+) {
+  if (ids.length < 2) return (ids.first, const []);
+  final realIds = ids.where((id) => !isPlaceholderId(id)).toList();
+  if (realIds.length >= 2) return (realIds.first, const []);
+  final keeperId = realIds.isNotEmpty ? realIds.first : ids.first;
+  return (
+    keeperId,
+    ids.where((id) => id != keeperId).toList(),
+  );
 }
