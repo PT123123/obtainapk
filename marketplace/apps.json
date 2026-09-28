@@ -12,14 +12,6 @@
             "preferredApkIndex": 0
         },
         {
-            "id": "com.beemdevelopment.aegis",
-            "url": "https://github.com/beemdevelopment/Aegis",
-            "author": "beemdevelopment",
-            "name": "Aegis Authenticator",
-            "additionalSettings": "{}",
-            "preferredApkIndex": 0
-        },
-        {
             "id": "100000000001",
             "url": "https://github.com/PT123123/a-music",
             "author": "PT123123",

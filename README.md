@@ -42,7 +42,7 @@ To add a new app to the marketplace, edit `marketplace/apps.json` following the 
 
 Current groups:
 
-- **`mine`** — your pre-configured apps (the apps previously shipped via `marketplace/apps.json`: NewPipe, Aegis, and the `PT123123/*` projects such as a-music, aw-android-native, a-quickstart, …).
+- **`mine`** — your pre-configured apps (the apps previously shipped via `marketplace/apps.json`: NewPipe, and the `PT123123/*` projects such as a-music, aw-android-native, a-quickstart, …).
 - **`open`** — a curated set of other GitHub open-source Android apps: **ZipXtract**, **思源笔记 (SiYuan)**, **NekoBox**, **KOReader**, **F-Droid**, **disky**.
 
 #### Behavior

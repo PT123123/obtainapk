@@ -92,6 +92,22 @@
           "name": "mymail",
           "additionalSettings": "{\"about\": \"w-mail，Windows + Android 双端原生邮件客户端\"}",
           "preferredApkIndex": 0
+        },
+        {
+          "id": "com.ichi2.anki",
+          "url": "https://github.com/PT123123/Ankidroid",
+          "author": "PT123123",
+          "name": "AnkiDroid",
+          "additionalSettings": "{\"includePrereleases\": true, \"about\": \"AnkiDroid fork，局域网同步 + 扫码配对\"}",
+          "preferredApkIndex": 0
+        },
+        {
+          "id": "com.example.feedreader",
+          "url": "https://github.com/PT123123/myFeed",
+          "author": "PT123123",
+          "name": "MyFeed",
+          "additionalSettings": "{\"about\": \"RSS 阅读器，端侧语义检索（ONNX）\"}",
+          "preferredApkIndex": 0
         }
       ]
     },
