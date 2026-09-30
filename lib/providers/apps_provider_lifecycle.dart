@@ -50,6 +50,13 @@ bool isIconCacheUsable({
   return cacheModified.millisecondsSinceEpoch >= packageLastUpdateTime;
 }
 
+/// Whether [relativePath] (relative to an APK cache directory) belongs to
+/// [appId]. Downloads are named `<appId>-<url hash>`, and a split-APK or
+/// container download unpacks into a `<appId>-<url hash>-dir/` folder that
+/// holds the APKs, so any path segment carrying the app prefix counts.
+bool apkPathBelongsToApp(String relativePath, String appId) =>
+    relativePath.split('/').any((segment) => segment.startsWith('$appId-'));
+
 extension AppsProviderLifecycle on AppsProvider {
   bool _getNaiveStandardVersionDetection(App app, {AppSource? source}) {
     AppSource resolved;
@@ -613,6 +620,53 @@ extension AppsProviderLifecycle on AppsProvider {
     );
     notify();
     scheduleAutoExport();
+  }
+
+  /// The APK files kept on disk for [appId]: the download cache (whose files
+  /// and split-APK bundle folders are named `<appId>-<url hash>`) plus the
+  /// public Download/Obtainium copies. One entry per file name (the cache wins,
+  /// the copy has the same content), newest first.
+  Future<List<File>> downloadedApkFilesFor(String appId) async {
+    final dirs = <Directory>[];
+    try {
+      dirs.add(apkDir);
+    } catch (_) {
+      // apkDir not initialized yet — nothing to list.
+    }
+    try {
+      dirs.add(Directory('${await getStorageRootPath()}/Download/Obtainium'));
+    } catch (_) {}
+    final byName = <String, File>{};
+    for (final dir in dirs) {
+      List<FileSystemEntity> entities;
+      try {
+        if (!dir.existsSync()) continue;
+        entities = dir.listSync(recursive: true, followLinks: false);
+      } catch (e) {
+        AppLogger.info('Could not list $dir for $appId: ${e.toString()}');
+        continue;
+      }
+      for (final entity in entities) {
+        if (entity is! File) continue;
+        final relative = entity.path.substring(dir.path.length + 1);
+        final name = relative.split('/').last;
+        if (!apkPathBelongsToApp(relative, appId)) continue;
+        if (!name.toLowerCase().endsWith('.apk')) continue;
+        if (!entity.existsSync()) continue;
+        // The cache dir is scanned first, so a public copy never replaces a
+        // file the installer itself uses.
+        byName.putIfAbsent(name, () => entity);
+      }
+    }
+    final files = byName.values.toList();
+    files.sort((a, b) {
+      try {
+        return b.lastModifiedSync().compareTo(a.lastModifiedSync());
+      } catch (_) {
+        return a.path.compareTo(b.path);
+      }
+    });
+    return files;
   }
 
   /// Deletes app JSON files, cached APKs, and icons for the given app IDs, then updates state.

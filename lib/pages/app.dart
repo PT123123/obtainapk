@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:material_ui/material_ui.dart';
@@ -69,6 +70,23 @@ class _AppPageState extends State<AppPage> {
   // Best-effort download-size probe for the currently-selected APK URL.
   String? _sizeProbeKey;
   int? _probedDownloadSize;
+
+  // APK files kept on disk for this app (download cache + Download/Obtainium).
+  List<File> _downloadedApks = const [];
+  bool _downloadsRunningBefore = false;
+
+  Future<void> _refreshDownloadedApks() async {
+    final List<File> files;
+    try {
+      files = await appsProvider.downloadedApkFilesFor(appId);
+    } catch (e) {
+      AppLogger.info('Could not list downloaded APKs for $appId: $e');
+      return;
+    }
+    if (mounted && appId == widget.appId) {
+      setState(() => _downloadedApks = files);
+    }
+  }
 
   void _maybeProbeDownloadSize(AppInMemory app) {
     final String? releaseUrl = app.app.releaseUrl;
@@ -161,6 +179,7 @@ class _AppPageState extends State<AppPage> {
       settingsProvider = context.read<SettingsProvider>();
       _sourceProvider = context.read<SourceProvider>();
       _initialized = true;
+      unawaited(_refreshDownloadedApks());
     }
   }
 
@@ -177,6 +196,8 @@ class _AppPageState extends State<AppPage> {
       prevApp = null;
       _sizeProbeKey = null;
       _probedDownloadSize = null;
+      _downloadedApks = const [];
+      unawaited(_refreshDownloadedApks());
       webViewLoaded = false;
       _webViewError = null;
       _pendingAppIdChange = true;
@@ -945,10 +966,16 @@ class _AppPageState extends State<AppPage> {
     if (app == null || installedPackage == null) return const [];
     final notes = <Widget>[];
     if (installedPackage != app.app.id) {
+      // Apps added from the bundled list have a numeric placeholder ID (and
+      // ones added by URL get a 12-hex temp ID) until the first install adopts
+      // the real package name, so differing from it is expected - stating it
+      // as a warning made every such app look broken.
       notes.add(
         _detailNote(
-          '已安装的包名 $installedPackage 与应用 ID ${app.app.id} 不一致，'
-          '按名称匹配为已安装；更新可能因包名不同而失败',
+          isTempId(app.app)
+              ? '设备上按${installedPackage == app.app.cachedInstalledPackageName ? '缓存包名' : '应用名'}匹配到 $installedPackage（跟踪 ID ${app.app.id} 是占位 ID，首次通过 Obtainium 安装后会改为它）'
+              : '已安装的包名 $installedPackage 与应用 ID ${app.app.id} 不一致，'
+                    '按名称匹配为已安装；更新可能因包名不同而失败',
         ),
       );
     }
@@ -961,11 +988,55 @@ class _AppPageState extends State<AppPage> {
     return notes;
   }
 
+  /// The APK files this app has on disk, one row each: name, size and the time
+  /// it was written.
+  Widget _downloadedApkRow(File file) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    int? size;
+    DateTime? modified;
+    try {
+      size = file.lengthSync();
+      modified = file.lastModifiedSync();
+    } catch (_) {
+      // Deleted mid-build or unreadable — the name alone is still useful.
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            file.path.split('/').last,
+            style: tt.bodySmall?.copyWith(fontFamily: 'monospace'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            [
+              if (size != null) formatBytes(size),
+              if (modified != null)
+                DateFormat('yyyy-MM-dd HH:mm').format(modified.toLocal()),
+            ].join(' · '),
+            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<Widget> _buildVersionInfoSections(AppInMemory? app) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final trackOnly = app?.app.settings.getBool('trackOnly') == true;
-    final pseudo = app?.app != null && isVersionPseudo(app!.app);
+    // "Using a pseudo version" is a statement about the version we report as
+    // installed, so with no package on the device it only reads as a false
+    // "installed" claim (the version line below says 未安装).
+    final pseudo =
+        app?.app != null &&
+        isVersionPseudo(app!.app) &&
+        app.installedInfo != null;
     final apkCount = app?.app.apkUrls.length ?? 0;
     final changeLogFn = app != null ? getChangeLogFn(context, app.app) : null;
     return [
@@ -1013,6 +1084,21 @@ class _AppPageState extends State<AppPage> {
         ],
       ),
       const SliverToBoxAdapter(child: SizedBox(height: 2)),
+      if (_downloadedApks.isNotEmpty) ...[
+        _buildSection(
+          false,
+          false,
+          children: [
+            Text(
+              tr('downloadedApks'),
+              style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            for (final file in _downloadedApks) _downloadedApkRow(file),
+          ],
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 2)),
+      ],
       _buildSection(
         false,
         true,
@@ -1337,6 +1423,18 @@ class _AppPageState extends State<AppPage> {
         if (mounted) _maybeProbeDownloadSize(app);
       });
     }
+    // Rescan kept APK files when a download/install transitions to idle, so the
+    // detail page reflects a freshly downloaded APK without a manual reload.
+    final bool downloadsActive =
+        areDownloadsRunning ||
+        app?.downloadProgress != null ||
+        updating;
+    if (_downloadsRunningBefore && !downloadsActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_refreshDownloadedApks());
+      });
+    }
+    _downloadsRunningBefore = downloadsActive;
     final source = this.source;
 
     if (!areDownloadsRunning &&

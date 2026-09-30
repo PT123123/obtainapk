@@ -424,6 +424,33 @@ The `claimed` set prevents two tracked apps from resolving to the same installed
 `loadApps()` (`apps_provider_lifecycle.dart`) calls this for each app that fails the
 primary package-name lookup.
 
+#### How the match is reported on the app detail page
+
+`_buildInstallMismatchNotes()` (`pages/app.dart`) states the match instead of alarming
+about it:
+
+- Entries imported from `list.json` keep a **numeric placeholder ID** (`1000000000NN`) and
+  URL-added apps a 12-hex temp ID until the first install adopts the real package name
+  (`handleAPKIDChange`). `isTempId()` (`models/app.dart`) recognizes both. For those, the
+  tracked ID differing from the on-device package is *expected*, so the detail page says
+  which package was matched (cache vs. name) rather than warning that updates may fail.
+- A genuine `id` that differs from the matched package still gets the warning, since that
+  is the case where an update can really fail.
+- The `pseudoVersionInUse` note requires `installedInfo != null`: it describes the version
+  reported as *installed*, so with no package on the device it only reads as a false
+  "installed" claim while the version line below says 未安装.
+
+#### Kept APK files per app
+
+`downloadedApkFilesFor(appId)` (`apps_provider_lifecycle.dart`) lists the APK files that
+belong to one app — download-cache files, split-APK/container bundle folders
+(`<appId>-<hash>-dir/`), and the public `Download/Obtainium` copies — deduplicated by file
+name (cache first, so the installer's own file wins) and sorted newest first.
+`apkPathBelongsToApp()` is the shared "does this path belong to the app" predicate:
+downloads are named `<appId>-<url hash>`, so any path segment carrying that prefix counts.
+The detail page shows these under **已下载的 APK** and rescans when this app's download or
+install transitions to idle.
+
 ### Background update notifications
 
 During background update checks (`bgUpdateCheck` in `apps_provider.dart`), errors are
