@@ -424,6 +424,24 @@ The `claimed` set prevents two tracked apps from resolving to the same installed
 `loadApps()` (`apps_provider_lifecycle.dart`) calls this for each app that fails the
 primary package-name lookup.
 
+#### list.json package-ID rename (`shouldAdoptListAppId`)
+
+A repo can change its `applicationId` (the AnkiDroid fork became
+`com.pt123123.ankiplus` from `2.25.0beta3`). The stored record still points at the old
+package, so every download is refused by the ID-change guard and piles up uninstalled in
+the cache. On startup, `mergeGroupedList` re-points such a record to the list's new ID via
+`shouldAdoptListAppId`. Adoption requires all of:
+
+- the list gives a **different** ID than the store uses for the same URL;
+- nothing is installed under the stored ID (`installedInfo == null`), so re-pointing can
+  never orphan a live app;
+- the new ID is not already tracked by another record;
+- the new ID is a real package name, not a numeric / 12-hex placeholder.
+
+Re-pointing deletes the old record (and its old-ID-named cached APK/icon); the app is
+re-downloaded under the new ID. The old name's learned `installedPackageName` / `appLabel`
+are dropped so the next load re-learns from the device.
+
 #### How the match is reported on the app detail page
 
 `_buildInstallMismatchNotes()` (`pages/app.dart`) states the match instead of alarming

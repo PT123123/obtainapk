@@ -319,9 +319,38 @@ extension AppsProviderImportExport on AppsProvider {
     apps.forEach((_, e) {
       existingByUrl.putIfAbsent(e.app.url, () => e.app);
     });
+    final List<({App stored, App adopted})> adoptions = [];
     parsedApps.forEach((id, parsed) {
       final tags = tagsByAppId[id]!.toList();
       final existing = apps[id]?.app ?? existingByUrl[parsed.url];
+      if (existing != null &&
+          shouldAdoptListAppId(
+            storedId: existing.id,
+            listId: id,
+            storedInstalled: apps[existing.id]?.installedInfo != null,
+            listIdAlreadyTracked: apps.containsKey(id),
+          )) {
+        adoptions.add((
+          stored: existing,
+          adopted: existing.copyWith(
+            id: id,
+            // The list owns this entry's display metadata, so take the name the
+            // repo now ships under; the user's own settings are kept.
+            name: parsed.name,
+            author: parsed.author,
+            groups: {...existing.groups, ...tags}.toList(),
+            // The package/label learned under the old ID belong to the old
+            // package - dropping them lets the next load re-learn from the
+            // device instead of re-matching a stale name.
+            additionalSettings: Map<String, dynamic>.from(
+              existing.additionalSettings,
+            )
+              ..remove('installedPackageName')
+              ..remove('appLabel'),
+          ),
+        ));
+        return;
+      }
       if (existing != null) {
         final mergedGroups = {...existing.groups, ...tags}.toList();
         // Move any legacy group tag out of categories: the category UI prunes
@@ -359,6 +388,18 @@ extension AppsProviderImportExport on AppsProvider {
         toSave.add(parsed.copyWith(groups: tags));
       }
     });
+
+    if (adoptions.isNotEmpty) {
+      // Re-pointing means the old record goes away; its cached APK/icon are
+      // named by the old ID so they are dropped too (a fresh download under the
+      // new ID follows).
+      await removeApps(adoptions.map((a) => a.stored.id).toList());
+      AppLogger.info(
+        'Adopted list.json package ID for ${adoptions.length} app(s): '
+        '${adoptions.map((a) => '${a.stored.id}->${a.adopted.id}').join(', ')}',
+      );
+      toSave.addAll(adoptions.map((a) => a.adopted));
+    }
 
     if (toSave.isNotEmpty) {
       await waitForAppsToLoad();
@@ -470,4 +511,25 @@ class ExportSchema {
     keeperId,
     ids.where((id) => id != keeperId).toList(),
   );
+}
+
+/// Whether a list.json entry's package [listId] should replace the [storedId]
+/// the store currently uses for the same app URL.
+///
+/// Only a real rename qualifies: the two IDs differ, nothing is installed under
+/// the old [storedId] (so re-pointing cannot orphan a live app), [listId] is not
+/// already tracked by another record, and [listId] is a valid package id rather
+/// than a fresh placeholder.
+bool shouldAdoptListAppId({
+  required String storedId,
+  required String listId,
+  required bool storedInstalled,
+  required bool listIdAlreadyTracked,
+}) {
+  if (storedId == listId) return false;
+  if (storedInstalled || listIdAlreadyTracked) return false;
+  // A placeholder id (all-digits or 12-hex) is not a real package name, so it
+  // must not be adopted as the app's ID.
+  return !(RegExp(r'^[0-9]+$').hasMatch(listId) ||
+      RegExp(r'^[0-9a-f]{12}$').hasMatch(listId));
 }

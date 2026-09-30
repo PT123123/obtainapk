@@ -55,6 +55,14 @@ Current groups:
   store and tagged with its group id in `App.groups`. Existing user apps are
   **never clobbered** — only the group tag is added; your pinned / renamed /
   reconfigured apps are preserved.
+- **Package-ID rename is adopted**: if an app that is still tracked but **not
+  installed** appears under a different package id in `list.json` (matched by
+  the same repo URL), the store adopts the new id at startup instead of keeping
+  the stale one. This is how a fork that changes its `applicationId` heals
+  itself: the old file is deleted, the new id is saved, and the learned
+  `installedPackageName` / `appLabel` cache is dropped so name-matching starts
+  fresh. A rename never fires for placeholder ids (numeric or 12-hex) and never
+  steals an id that is already tracked.
 - **Group tags are not categories**: group ids are stored in a dedicated
   `App.groups` field, deliberately kept out of `App.categories`. Categories are
   user-managed and anything not registered in the category list gets pruned and

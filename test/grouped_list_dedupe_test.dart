@@ -50,4 +50,76 @@ void main() {
       expect(remove, isEmpty);
     });
   });
+
+  group('shouldAdoptListAppId (list.json package-ID rename)', () {
+    test('adopts a real new package id for an uninstalled old one', () {
+      expect(
+        shouldAdoptListAppId(
+          storedId: 'com.ichi2.anki',
+          listId: 'com.pt123123.ankiplus',
+          storedInstalled: false,
+          listIdAlreadyTracked: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('same id is not an adoption', () {
+      expect(
+        shouldAdoptListAppId(
+          storedId: 'com.x.y',
+          listId: 'com.x.y',
+          storedInstalled: false,
+          listIdAlreadyTracked: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('never re-points an app that is installed under the stored id', () {
+      expect(
+        shouldAdoptListAppId(
+          storedId: 'com.ichi2.anki',
+          listId: 'com.pt123123.ankiplus',
+          storedInstalled: true,
+          listIdAlreadyTracked: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('never re-points when the new id is already tracked elsewhere', () {
+      expect(
+        shouldAdoptListAppId(
+          storedId: 'com.ichi2.anki',
+          listId: 'com.pt123123.ankiplus',
+          storedInstalled: false,
+          listIdAlreadyTracked: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('a numeric/12-hex placeholder in list.json is not adopted as an id',
+    () {
+      expect(
+        shouldAdoptListAppId(
+          storedId: 'com.real.pkg',
+          listId: '100000000009',
+          storedInstalled: false,
+          listIdAlreadyTracked: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldAdoptListAppId(
+          storedId: 'com.real.pkg',
+          listId: 'a1b2c3d4e5f6',
+          storedInstalled: false,
+          listIdAlreadyTracked: false,
+        ),
+        isFalse,
+      );
+    });
+  });
 }
