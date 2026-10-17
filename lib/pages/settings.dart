@@ -1370,9 +1370,8 @@ class _GroupedListSectionState extends State<_GroupedListSection> {
 
 /// Settings → 应用来源: which repository answers update checks and downloads.
 ///
-/// ObtainAPK uses the near (LAN) repository by default; the remote sources are
-/// only consulted when enabled globally here or declared per app through
-/// `useRemoteSource`.
+/// ObtainAPK tries the near (LAN) repository first and uses each app's original
+/// source when the repository does not publish it.
 class _AppSourceSection extends StatefulWidget {
   const _AppSourceSection();
 
@@ -1405,9 +1404,9 @@ class _AppSourceSectionState extends State<_AppSourceSection> {
     if (settingsProvider.githubSourceEnabled) {
       return '现在所有应用按各自声明的网站源检查更新。';
     }
-    return '现在所有应用走近端仓库：${NearSource(settingsProvider).baseUrl}\n'
-        '仓库里没有某个应用时会报错，不会自动回落到 GitHub；'
-        '要单个应用走网站，就在它的设置里勾选「改用远端源」。';
+    final address = NearSource(settingsProvider).baseUrl;
+    return '现在所有应用优先走近端仓库：${address.isEmpty ? '通过 mDNS 自动发现' : address}\n'
+        '仓库没有收录的应用会自动回到它原来的更新源。';
   }
 
   @override
@@ -1421,8 +1420,8 @@ class _AppSourceSectionState extends State<_AppSourceSection> {
         CardTile(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Text(
-            '更新检查和 APK 下载默认全部走近端局域网仓库（lanpub serve 起的那个），'
-            'GitHub 等远端源要额外声明才会用到。',
+            '更新检查和 APK 下载优先使用近端局域网仓库（lanpub serve 起的那个）；'
+            '仓库未收录的应用会自动使用它原来的更新源。',
             style: captionStyle,
           ),
         ),
@@ -1436,7 +1435,9 @@ class _AppSourceSectionState extends State<_AppSourceSection> {
                   'lanRepoUrl',
                   label: '局域网仓库地址',
                   required: false,
-                  hint: defaultLanRepoUrl,
+                  hint: defaultLanRepoUrl.isEmpty
+                      ? '留空时通过 mDNS 自动发现'
+                      : defaultLanRepoUrl,
                 )..value = settingsProvider.lanRepoUrl,
               ],
             ],

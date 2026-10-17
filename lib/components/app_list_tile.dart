@@ -224,6 +224,7 @@ class AppListTile extends StatelessWidget {
   /// Shape for the tile's selection/pinned highlight, so it matches the
   /// enclosing card's (or group segment's) corners. Falls back to the theme.
   final BorderRadius? borderRadius;
+  final bool grid;
 
   const AppListTile({
     super.key,
@@ -237,6 +238,7 @@ class AppListTile extends StatelessWidget {
     required this.onToggleSelected,
     this.selectionMode = false,
     this.borderRadius,
+    this.grid = false,
   });
 
   App get _app => appInMemory.app;
@@ -270,19 +272,22 @@ class AppListTile extends StatelessWidget {
     if (appsProvider.areDownloadsRunning()) return;
     settingsProvider.lightImpact();
     unawaited(
-      appsProvider.checkUpdate(appId).then((App? updated) {
-        if (context.mounted) {
-          showMessage(
-            updated == null
-                ? '已拉取最新信息，无更新'
-                : '已刷新，最新：${updated.latestVersion}',
-            context,
-          );
-        }
-      }).catchError((e) {
-        if (context.mounted) showError(e, context);
-        return null;
-      }),
+      appsProvider
+          .checkUpdate(appId)
+          .then((App? updated) {
+            if (context.mounted) {
+              showMessage(
+                updated == null
+                    ? '已拉取最新信息，无更新'
+                    : '已刷新，最新：${updated.latestVersion}',
+                context,
+              );
+            }
+          })
+          .catchError((e) {
+            if (context.mounted) showError(e, context);
+            return null;
+          }),
     );
   }
 
@@ -474,6 +479,17 @@ class AppListTile extends StatelessWidget {
     return ValueListenableBuilder<double?>(
       valueListenable: appInMemory.downloadProgressNotifier,
       builder: (context, downloadProgress, child) {
+        if (grid) {
+          return _buildGridTile(
+            context,
+            downloadProgress,
+            overflowMenu,
+            hasUpdate,
+            canInstall,
+            canUpdate,
+            showChangesFn,
+          );
+        }
         final tileChild = Semantics(
           customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
             if (canInstall || canUpdate)
@@ -559,8 +575,7 @@ class AppListTile extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _authorText(),
-                          if (_app.hasPendingRepoRename)
-                            _repoMovedRow(context),
+                          if (_app.hasPendingRepoRename) _repoMovedRow(context),
                           // Standard density: version/date sit under the
                           // author instead of the trailing slot (see
                           // [versionInSubtitle]).
@@ -616,6 +631,151 @@ class AppListTile extends StatelessWidget {
 
         return tileChild;
       },
+    );
+  }
+
+  Widget _buildGridTile(
+    BuildContext context,
+    double? downloadProgress,
+    Widget overflowMenu,
+    bool hasUpdate,
+    bool canInstall,
+    bool canUpdate,
+    VoidCallback? showChangesFn,
+  ) {
+    final appId = _app.id;
+    final cs = Theme.of(context).colorScheme;
+    final transparent = Colors.transparent.toARGB32();
+    final stops = _app.categories.isEmpty
+        ? const <double>[]
+        : List.generate(
+            _app.categories.length,
+            (i) => i / _app.categories.length,
+          );
+    return Semantics(
+      customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
+        if (canInstall || canUpdate)
+          CustomSemanticsAction(
+            label: canUpdate ? tr('update') : tr('install'),
+          ): () =>
+              _startInstallOrUpdate(context),
+        CustomSemanticsAction(label: tr('remove')): () {
+          appsProvider.removeAppsWithModal(context, [_app]);
+        },
+      },
+      child: InkWell(
+        borderRadius: borderRadius ?? BorderRadius.circular(18),
+        onTap: onTap,
+        onLongPress: () {
+          settingsProvider.selectionClick();
+          onToggleSelected();
+        },
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: borderRadius ?? BorderRadius.circular(18),
+            color: multiSelected || detailSelected
+                ? cs.primary.withValues(alpha: _app.pinned ? 0.2 : 0.1)
+                : _app.pinned
+                ? cs.onSurface.withValues(alpha: 0.10)
+                : null,
+            gradient: _app.categories.isEmpty
+                ? null
+                : LinearGradient(
+                    stops: [...stops, 1.0],
+                    begin: const Alignment(-1, 0),
+                    end: const Alignment(-0.97, 0),
+                    colors: [
+                      ..._app.categories.map(
+                        (category) => Color(
+                          settingsProvider.categories[category] ?? transparent,
+                        ).withAlpha(255),
+                      ),
+                      Color(transparent),
+                    ],
+                  ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  if (selectionMode)
+                    SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: Checkbox(
+                        value: multiSelected,
+                        onChanged: (_) => onToggleSelected(),
+                      ),
+                    )
+                  else
+                    AppIconWidget(
+                      appId: appId,
+                      installed: appInMemory.installedInfo != null,
+                      appsProvider: appsProvider,
+                      size: 44,
+                    ),
+                  const Spacer(),
+                  ExcludeFocus(child: overflowMenu),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                appInMemory.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: _app.pinned ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+              const SizedBox(height: 2),
+              _authorText(),
+              if (_app.hasPendingRepoRename) _repoMovedRow(context),
+              const SizedBox(height: 3),
+              if (downloadProgress != null) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: LinearProgressIndicator(
+                        value: downloadProgress < 0
+                            ? null
+                            : downloadProgress / 100,
+                      ),
+                    ),
+                    if (downloadProgress >= 0)
+                      DownloadCancelButton(
+                        onPressed: () => appsProvider.cancelDownload(appId),
+                      ),
+                  ],
+                ),
+                Text(
+                  downloadProgress < 0
+                      ? tr('installing')
+                      : '${downloadProgress.toInt()}%',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ] else
+                Row(
+                  children: [
+                    Expanded(
+                      child: _VersionLabel(
+                        appInMemory: appInMemory,
+                        settingsProvider: settingsProvider,
+                        maxWidth: 160,
+                        showChangesFn: showChangesFn,
+                        alignEnd: false,
+                      ),
+                    ),
+                    if (hasUpdate) _updateButton(context),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -695,6 +855,7 @@ class AppListGroupSection extends StatelessWidget {
   final int appCount;
   final VoidCallback onToggle;
   final List<Widget> Function() buildTiles;
+  final bool grid;
 
   const AppListGroupSection({
     super.key,
@@ -703,6 +864,7 @@ class AppListGroupSection extends StatelessWidget {
     required this.appCount,
     required this.onToggle,
     required this.buildTiles,
+    this.grid = false,
   });
 
   @override
@@ -764,9 +926,24 @@ class AppListGroupSection extends StatelessWidget {
               ),
             ),
           ),
-          ...tiles.asMap().entries.map(
-            (e) => segment(e.key + 1, colorScheme.surfaceContainerLow, e.value),
-          ),
+          if (grid && tiles.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: GridView.count(
+                crossAxisCount: 2,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 0.9,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                children: tiles,
+              ),
+            )
+          else
+            ...tiles.asMap().entries.map(
+              (e) =>
+                  segment(e.key + 1, colorScheme.surfaceContainerLow, e.value),
+            ),
         ],
       ),
     );

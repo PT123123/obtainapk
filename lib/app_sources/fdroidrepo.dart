@@ -239,9 +239,10 @@ class FDroidRepo extends AppSource {
     Map<String, dynamic> additionalSettings,
   ) async => (await _fetchIndex(baseUrl, additionalSettings)).entries.length;
 
-  /// Returns apps whose display names exactly match any of [names], ignoring
-  /// case and repeated whitespace. Exact matching avoids choosing a wrong APK
-  /// when two unrelated apps have similar names.
+  /// Returns apps whose display name, package ID, or package ID component
+  /// matches [names]. Compact repository slugs are also accepted, with a
+  /// unique prefix/suffix match as a last resort. Similar names never win when
+  /// the match is ambiguous.
   Future<List<MapEntry<String, String>>> findAppsByExactName(
     String baseUrl,
     Iterable<String> names,
@@ -250,16 +251,50 @@ class FDroidRepo extends AppSource {
     String normalize(String value) =>
         value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
-    final wanted = names
+    final suppliedNames = names.toList();
+    final wanted = suppliedNames
         .map(normalize)
         .where((name) => name.isNotEmpty)
         .toSet();
     if (wanted.isEmpty) return const [];
     final index = await _fetchIndex(baseUrl, additionalSettings);
-    return index.entries
+    String compact(String value) =>
+        value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+    final wantedIds = suppliedNames
+        .map(compact)
+        .where((name) => name.length >= 4)
+        .toSet();
+    final exact = index.entries
         .where((entry) => wanted.contains(normalize(entry.name)))
-        .map((entry) => MapEntry(entry.id, entry.name))
         .toList();
+    final byId = index.entries.where((entry) {
+      final components = entry.id.toLowerCase().split(RegExp(r'[^a-z0-9]+'));
+      return wantedIds.contains(compact(entry.id)) ||
+          components.any(wantedIds.contains);
+    }).toList();
+    final exactMatches = {...exact, ...byId}.toList();
+    if (exactMatches.isNotEmpty) {
+      return exactMatches
+          .map((entry) => MapEntry(entry.id, entry.name))
+          .toList();
+    }
+
+    final fuzzy = index.entries.where((entry) {
+      final components = entry.id.toLowerCase().split(RegExp(r'[^a-z0-9]+'));
+      return components.any(
+        (component) =>
+            component.length >= 6 &&
+            wantedIds.any(
+              (name) =>
+                  name.length >= 8 &&
+                  (name.startsWith(component) || name.endsWith(component)),
+            ),
+      );
+    }).toList();
+    if (fuzzy.length != 1) return const [];
+    final entry = fuzzy.single;
+    return [MapEntry(entry.id, entry.name)];
   }
 
   Future<_FdroidIndex?> _tryFetchIndexV2(

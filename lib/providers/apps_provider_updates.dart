@@ -25,6 +25,9 @@ extension AppsProviderUpdates on AppsProvider {
     }
     final SourceProvider sourceProvider = SourceProvider();
     if (NearSource(settingsProvider).isUsedFor(currentApp)) {
+      // The LAN repository is the selected update source. If it does not
+      // contain this app, surface that fact instead of silently querying the
+      // original source (which may be GitHub and hit its API rate limit).
       return await fetchNearUpdate(currentApp);
     }
     App newApp = await sourceProvider.getApp(
@@ -57,14 +60,20 @@ extension AppsProviderUpdates on AppsProvider {
   Future<App> fetchNearUpdate(App currentApp) async {
     final resolution = await NearSource(settingsProvider).resolve(currentApp);
     final apk = resolution.apk;
-    return currentApp.copyWith(
+    final installedInfo =
+        apps[currentApp.id]?.installedInfo ??
+        await getInstalledInfo(resolution.packageId);
+    final additionalSettings = <String, dynamic>{
+      ...currentApp.additionalSettings,
+      'nearSourcePackageId': resolution.packageId,
+      if (installedInfo?.packageName != null)
+        'installedPackageName': installedInfo!.packageName,
+    };
+    final fetched = currentApp.copyWith(
       latestVersion: apk.version,
       apkUrls: apk.apkUrls,
       otherAssetUrls: const [],
-      additionalSettings: <String, dynamic>{
-        ...currentApp.additionalSettings,
-        'nearSourcePackageId': resolution.packageId,
-      },
+      additionalSettings: additionalSettings,
       preferredApkIndex: currentApp.preferredApkIndex < apk.apkUrls.length
           ? currentApp.preferredApkIndex
           : (apk.apkUrls.isNotEmpty ? 0 : currentApp.preferredApkIndex),
@@ -73,6 +82,11 @@ extension AppsProviderUpdates on AppsProvider {
       releaseUrl: apk.releaseUrl,
       lastUpdateCheck: DateTime.now(),
     );
+    // Update checks decide whether to notify before saveApps() persists this
+    // result. Reconcile against the already-known installed package here so
+    // versionCode-confirmed matches (for example versionName `1.6.31` with
+    // repo version `1.6.31+2371`) are recognized without downloading the APK.
+    return reconcileInstallStatus(fetched, installedInfo) ?? fetched;
   }
 
   /// Fetches [appId] with a short retry for transient TLS handshake failures.
@@ -229,6 +243,9 @@ extension AppsProviderUpdates on AppsProvider {
             return MapEntry(newApp, isUpdate);
           }
         } catch (e) {
+          if (e is SocketException && settingsProvider.lanRepoUrl.isEmpty) {
+            NearSource(settingsProvider).invalidateDiscovery();
+          }
           if (e is SocketException && throwErrorsForRetry) {
             rethrow;
           }

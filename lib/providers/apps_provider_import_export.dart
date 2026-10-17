@@ -456,7 +456,22 @@ extension AppsProviderImportExport on AppsProvider {
   Future<({String source, int added, int updated, int suppressed})>
   syncGroupedList() async {
     final url = settingsProvider.groupedListUrl;
-    final candidateUrls = <String>[url, 'https://ghproxy.com/$url'];
+    // Reuse the LAN repository's DNS-SD discovery. Its HTTP root serves both
+    // the F-Droid index and the ObtainAPK grouped-list contract at /list.json.
+    final candidateUrls = <String>[];
+    try {
+      final lanBase = await const MethodChannel(
+        'com.pt123123.obtainapk/lan_repo_discovery',
+      ).invokeMethod<String>('discover').timeout(const Duration(seconds: 2));
+      if (lanBase != null && lanBase.isNotEmpty) {
+        candidateUrls.add(
+          '${lanBase.replaceFirst(RegExp(r'/+$'), '')}/list.json',
+        );
+      }
+    } catch (e) {
+      AppLogger.info('LAN grouped-list discovery unavailable: $e');
+    }
+    candidateUrls.addAll([url, 'https://ghproxy.com/$url']);
     final failures = <String>[];
     String? raw;
     var source = '';

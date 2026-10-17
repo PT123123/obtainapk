@@ -49,6 +49,29 @@ bool isIconCacheUsable({
   return cacheModified.millisecondsSinceEpoch >= packageLastUpdateTime;
 }
 
+/// Uses the Android package name as a durable icon key across source ID
+/// changes, while retaining the tracked-ID key for existing cache files.
+List<File> _iconCacheFilesFor(
+  Directory cacheDir,
+  App app, {
+  String? installedPackageName,
+}) {
+  final packageName = installedPackageName ?? app.cachedInstalledPackageName;
+  final keys = <String>{
+    if (packageName != null && packageName.isNotEmpty) packageName,
+    app.id,
+  };
+  return keys.map((key) => File('${cacheDir.path}/$key.png')).toList();
+}
+
+List<String> _installedPackageLookupIds(App app) => <String>{
+  app.id,
+  if (app.cachedInstalledPackageName != null) app.cachedInstalledPackageName!,
+  if (app.additionalSettings['nearSourcePackageId'] is String &&
+      (app.additionalSettings['nearSourcePackageId'] as String).isNotEmpty)
+    app.additionalSettings['nearSourcePackageId'] as String,
+}.toList();
+
 /// Whether [relativePath] (relative to an APK cache directory) belongs to
 /// [appId]. Downloads are named `<appId>-<url hash>`, and a split-APK or
 /// container download unpacks into a `<appId>-<url hash>-dir/` folder that
@@ -378,14 +401,19 @@ extension AppsProviderLifecycle on AppsProvider {
                     // The tracked ID matched nothing installed (an
                     // inferred/placeholder ID, or a differing applicationId).
                     // 1. Fall back to the real package name learned earlier.
-                    final cachedPackageName = app.cachedInstalledPackageName;
-                    final cachedInfo =
-                        cachedPackageName != null &&
-                            !claimedInstalledPackages.contains(
-                              cachedPackageName,
-                            )
-                        ? installedAppsMap[cachedPackageName]
-                        : null;
+                    String? cachedPackageName;
+                    PackageInfo? cachedInfo;
+                    for (final packageName in _installedPackageLookupIds(app)) {
+                      if (packageName == app.id ||
+                          claimedInstalledPackages.contains(packageName)) {
+                        continue;
+                      }
+                      cachedInfo = installedAppsMap[packageName];
+                      if (cachedInfo != null) {
+                        cachedPackageName = packageName;
+                        break;
+                      }
+                    }
                     if (cachedInfo != null) {
                       installedInfo = cachedInfo;
                       claimedInstalledPackages.add(cachedPackageName!);
@@ -534,20 +562,34 @@ extension AppsProviderLifecycle on AppsProvider {
 
   Future<void> updateAppIcon(String? appId, {bool ignoreCache = false}) async {
     final app = apps[appId];
-    final cachedIcon = File('${iconsCacheDir.path}/$appId.png');
-    final cacheExists = cachedIcon.existsSync();
+    if (app == null) return;
+    final cacheFiles = _iconCacheFilesFor(
+      iconsCacheDir,
+      app.app,
+      installedPackageName: app.installedInfo?.packageName,
+    );
+    File? cachedIcon;
+    for (final file in cacheFiles) {
+      if (file.existsSync()) {
+        cachedIcon = file;
+        break;
+      }
+    }
+    final cacheExists = cachedIcon != null;
     final alreadyCached = isIconCacheUsable(
       ignoreCache: ignoreCache,
       cacheExists: cacheExists,
       cacheModified: cacheExists ? cachedIcon.lastModifiedSync() : null,
-      packageLastUpdateTime: app?.installedInfo?.lastUpdateTime,
+      packageLastUpdateTime: app.installedInfo?.lastUpdateTime,
     );
-    if (app?.icon == null || !alreadyCached) {
+    if (app.icon == null || !alreadyCached) {
       final icon = alreadyCached
-          ? (await cachedIcon.readAsBytes())
-          : (await app?.installedInfo?.applicationInfo?.getAppIcon());
-      if (icon != null && !alreadyCached) {
-        unawaited(cachedIcon.writeAsBytes(icon));
+          ? (await cachedIcon!.readAsBytes())
+          : (await app.installedInfo?.applicationInfo?.getAppIcon());
+      if (icon != null) {
+        for (final file in cacheFiles) {
+          await file.writeAsBytes(icon);
+        }
       }
       if (icon != null) {
         apps.update(
@@ -580,11 +622,15 @@ extension AppsProviderLifecycle on AppsProvider {
     await Future.wait(
       apps.map((a) async {
         var app = a.copyWith();
-        final bool canReuse =
-            reuseInstalledInfo && this.apps.containsKey(app.id);
-        final PackageInfo? info = canReuse
-            ? this.apps[app.id]!.installedInfo
-            : await getInstalledInfo(app.id);
+        final existing = this.apps[app.id];
+        final canReuse = reuseInstalledInfo && existing?.installedInfo != null;
+        PackageInfo? info = canReuse ? existing!.installedInfo : null;
+        if (!canReuse) {
+          for (final packageName in _installedPackageLookupIds(app)) {
+            info = await getInstalledInfo(packageName);
+            if (info != null) break;
+          }
+        }
         final Uint8List? icon = canReuse
             ? this.apps[app.id]!.icon
             : await info?.applicationInfo?.getAppIcon();
@@ -608,13 +654,18 @@ extension AppsProviderLifecycle on AppsProvider {
         } else if (!onlyIfExists) {
           this.apps[app.id] = AppInMemory(app, null, info, icon);
         }
-        if (info == null) {
-          final cachedIcon = File('${iconsCacheDir.path}/${app.id}.png');
-          if (cachedIcon.existsSync()) cachedIcon.deleteSync();
-        } else if (!canReuse && icon != null) {
+        if (!canReuse && icon != null) {
           // Persist the freshly fetched icon so future cold starts can reuse
-          // it (and so a changed icon replaces the stale cached one).
-          await File('${iconsCacheDir.path}/${app.id}.png').writeAsBytes(icon);
+          // it (and so a changed icon replaces the stale one). Also key by the
+          // Android package name, which stays stable across app versions.
+          final cacheFiles = _iconCacheFilesFor(
+            iconsCacheDir,
+            app,
+            installedPackageName: info?.packageName,
+          );
+          for (final file in cacheFiles) {
+            await file.writeAsBytes(icon);
+          }
         }
       }),
     );

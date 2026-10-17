@@ -9,9 +9,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.net.wifi.WifiManager
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
@@ -27,6 +30,8 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private companion object {
         const val EXTERNAL_INSTALL_CHANNEL = "com.pt123123.obtainapk/external_install"
+        const val LAN_REPO_CHANNEL = "com.pt123123.obtainapk/lan_repo_discovery"
+        const val LAN_REPO_SERVICE_TYPE = "_obtainapk._tcp."
         const val APK_MIME = "application/vnd.android.package-archive"
 
         /** Request code for tracked external-installer launches. */
@@ -51,9 +56,75 @@ class MainActivity : FlutterActivity() {
     }
 
     private var pendingShareIntent: Intent? = null
+    private var lanRepoDiscovery: LanRepoDiscovery? = null
 
     private val installHandler = Handler(Looper.getMainLooper())
     private var installWatcher: InstallWatcher? = null
+
+    private inner class LanRepoDiscovery(
+        private val methodResult: MethodChannel.Result,
+    ) {
+        private val nsdManager = getSystemService(Context.NSD_SERVICE) as NsdManager
+        private val handler = Handler(Looper.getMainLooper())
+        private val wifiLock = (applicationContext.getSystemService(
+            Context.WIFI_SERVICE,
+        ) as WifiManager).createMulticastLock("obtainapk-lan-repo").apply {
+            setReferenceCounted(false)
+        }
+        private var finished = false
+        private val timeout = Runnable { finish(null) }
+        private val listener = object : NsdManager.DiscoveryListener {
+            override fun onDiscoveryStarted(serviceType: String) = Unit
+            override fun onDiscoveryStopped(serviceType: String) = Unit
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) = finish(null)
+            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) = finish(null)
+            override fun onServiceLost(serviceInfo: NsdServiceInfo) = Unit
+            override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                if (!serviceInfo.serviceType.trimEnd('.').equals(
+                        LAN_REPO_SERVICE_TYPE.trimEnd('.'),
+                        ignoreCase = true,
+                    )) return
+                try {
+                    @Suppress("DEPRECATION")
+                    nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                        override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) = Unit
+                        override fun onServiceResolved(info: NsdServiceInfo) {
+                            val host = info.host?.hostAddress ?: return
+                            val ipv4 = host.substringBefore('%')
+                            if (ipv4.contains(':')) return
+                            finish("http://$ipv4:${info.port}")
+                        }
+                    })
+                } catch (_: IllegalArgumentException) {
+                    // A matching announcement may already be resolving.
+                }
+            }
+        }
+
+        fun start() {
+            try {
+                wifiLock.acquire()
+                handler.postDelayed(timeout, 1_000)
+                nsdManager.discoverServices(
+                    LAN_REPO_SERVICE_TYPE,
+                    NsdManager.PROTOCOL_DNS_SD,
+                    listener,
+                )
+            } catch (_: Exception) {
+                finish(null)
+            }
+        }
+
+        fun finish(url: String?) {
+            if (finished) return
+            finished = true
+            handler.removeCallbacks(timeout)
+            try { nsdManager.stopServiceDiscovery(listener) } catch (_: Exception) {}
+            if (wifiLock.isHeld) wifiLock.release()
+            if (lanRepoDiscovery === this) lanRepoDiscovery = null
+            methodResult.success(url)
+        }
+    }
 
     /**
      * Tracks one external-installer handoff and resolves the pending
@@ -193,6 +264,19 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            LAN_REPO_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            if (call.method == "discover") {
+                lanRepoDiscovery?.finish(null)
+                val discovery = LanRepoDiscovery(result)
+                lanRepoDiscovery = discovery
+                discovery.start()
+            } else {
+                result.notImplemented()
+            }
+        }
         pendingShareIntent?.let {
             super.onNewIntent(it)
             pendingShareIntent = null
@@ -294,6 +378,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         installWatcher?.complete(installed = false, errorCode = null)
+        lanRepoDiscovery?.finish(null)
         super.onDestroy()
     }
 

@@ -467,12 +467,17 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Base URL of the LAN F-Droid repository — the near source that answers
-  /// update checks and downloads by default. Normalized without a trailing
-  /// slash so `'$baseUrl/?appId=...'` and prefix comparisons stay valid.
+  /// Base URL of the LAN F-Droid repository — checked first for updates and
+  /// downloads. Apps not published there use their original source. Normalized
+  /// without a trailing slash so `'$baseUrl/?appId=...'` and prefix comparisons stay valid.
   String get lanRepoUrl {
     final stored = getSettingString('lanRepoUrl')?.trim();
-    final url = (stored == null || stored.isEmpty)
+    // 1.6.41 and earlier shipped with this address as the default. Treat it as
+    // auto-discovery so existing installs follow the current LAN IP.
+    final url =
+        (stored == null ||
+            stored.isEmpty ||
+            stored == 'http://192.168.5.34:8080')
         ? defaultLanRepoUrl
         : stored;
     return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
@@ -480,8 +485,11 @@ class SettingsProvider with ChangeNotifier {
 
   set lanRepoUrl(String url) {
     var trimmed = url.trim();
-    if (trimmed.endsWith('/')) trimmed = trimmed.substring(0, trimmed.length - 1);
-    if (trimmed.isEmpty || trimmed == defaultLanRepoUrl) {
+    if (trimmed.endsWith('/'))
+      trimmed = trimmed.substring(0, trimmed.length - 1);
+    if (trimmed.isEmpty ||
+        trimmed == defaultLanRepoUrl ||
+        trimmed == 'http://192.168.5.34:8080') {
       prefs?.remove('lanRepoUrl');
     } else {
       prefs?.setString('lanRepoUrl', trimmed);
@@ -489,9 +497,8 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Manual opt-in for the remote (GitHub) source family. Off by default:
-  /// apps resolve through [lanRepoUrl] unless they declare the remote source
-  /// themselves (`useRemoteSource` in the app's settings).
+  /// Force all apps to use their original remote sources instead of trying the
+  /// LAN repository first.
   bool get githubSourceEnabled {
     return _getBool('githubSourceEnabled') ?? false;
   }

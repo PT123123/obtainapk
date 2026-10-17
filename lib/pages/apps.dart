@@ -809,6 +809,7 @@ class AppsPageState extends State<AppsPage> {
     AppsProvider appsProvider, {
     BorderRadius? borderRadius,
     bool autofocus = false,
+    bool grid = false,
   }) {
     final aim = listedApps[index];
     final app = aim.app;
@@ -821,6 +822,7 @@ class AppsPageState extends State<AppsPage> {
       detailSelected: widget.selectedAppId == app.id,
       autofocus: autofocus && settingsProvider.isTV,
       selectionMode: _selectionMode,
+      grid: grid,
       onToggleSelected: () => toggleAppSelected(app),
       onTap: () {
         if (_selectionMode || selectedAppIds.isNotEmpty) {
@@ -854,6 +856,27 @@ class AppsPageState extends State<AppsPage> {
           autofocus: index == 0,
           borderRadius: BorderRadius.circular(connectedTileBigRadius),
         ),
+      ),
+    );
+  }
+
+  Widget _appGridCard(
+    int index,
+    BuildContext context,
+    List<AppInMemory> listedApps,
+    SettingsProvider settingsProvider,
+    AppsProvider appsProvider,
+  ) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: _buildTile(
+        index,
+        context,
+        listedApps,
+        settingsProvider,
+        appsProvider,
+        autofocus: index == 0,
+        grid: true,
       ),
     );
   }
@@ -897,8 +920,10 @@ class AppsPageState extends State<AppsPage> {
               isFirst: false,
               isLast: j == appIndices.length - 1,
             ),
+            grid: !settingsProvider.isTV,
           ),
       ],
+      grid: !settingsProvider.isTV,
     );
   }
 
@@ -961,19 +986,40 @@ class AppsPageState extends State<AppsPage> {
               addAutomaticKeepAlives: false,
             ),
           )
-        : SliverList(
+        : settingsProvider.isTV
+        ? SliverList(
             delegate: SliverChildBuilderDelegate(
-              (BuildContext context, int index) {
-                return _appTileCard(
+              (context, index) => _appTileCard(
+                index,
+                context,
+                listedApps,
+                settingsProvider,
+                appsProvider,
+              ),
+              childCount: listedApps.length,
+              addAutomaticKeepAlives: false,
+            ),
+          )
+        : SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 0.9,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _appGridCard(
                   index,
                   context,
                   listedApps,
                   settingsProvider,
                   appsProvider,
-                );
-              },
-              childCount: listedApps.length,
-              addAutomaticKeepAlives: false,
+                ),
+                childCount: listedApps.length,
+                addAutomaticKeepAlives: false,
+              ),
             ),
           );
   }
@@ -989,9 +1035,7 @@ class AppsPageState extends State<AppsPage> {
       IconButton(
         tooltip: tr('downloadedApks'),
         onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => const DownloadedApksPage(),
-          ),
+          MaterialPageRoute(builder: (context) => const DownloadedApksPage()),
         ),
         icon: const Icon(Icons.download_for_offline_outlined),
       ),
@@ -1240,10 +1284,9 @@ class AppsPageState extends State<AppsPage> {
     // Group tags live in [App.groups] (not categories) so the category editor
     // can never strip them.
     if (_selectedGroup != null) {
-      listedApps =
-          listedApps
-              .where((a) => a.app.groups.contains(_selectedGroup))
-              .toList();
+      listedApps = listedApps
+          .where((a) => a.app.groups.contains(_selectedGroup))
+          .toList();
     }
 
     final listedAppIdSet = listedApps.map((e) => e.app.id).toSet();

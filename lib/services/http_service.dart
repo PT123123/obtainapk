@@ -139,7 +139,9 @@ class HttpService {
     final client = securityContext != null
         ? HttpClient(context: securityContext)
         : HttpClient();
-    client.connectionTimeout = const Duration(seconds: 30);
+    client.connectionTimeout = additionalSettings['lanRepoRequest'] == true
+        ? const Duration(seconds: 2)
+        : const Duration(seconds: 10);
     if (insecure) {
       client.badCertificateCallback =
           (X509Certificate cert, String host, int port) {

@@ -61,9 +61,9 @@ const fallbackLocale = Locale('en');
 const String defaultGroupedListUrl =
     'https://raw.githubusercontent.com/PT123123/obtainapk/main/list.json';
 
-/// Default base URL of the LAN F-Droid repository (the near source) published
-/// by `lanpub serve`. Overridden by the `lanRepoUrl` shared-prefs key.
-const String defaultLanRepoUrl = 'http://192.168.5.34:8080';
+/// Empty means discover the LAN F-Droid repository advertised by `lanpub serve`
+/// over DNS-SD/mDNS. A manually configured URL still overrides discovery.
+const String defaultLanRepoUrl = '';
 final Set<Locale> supportedLocaleSet = supportedLocales
     .map((e) => e.key)
     .toSet();
