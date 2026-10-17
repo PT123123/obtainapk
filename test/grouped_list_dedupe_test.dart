@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:obtainium/models/app.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 
 void main() {
@@ -100,25 +101,72 @@ void main() {
       );
     });
 
-    test('a numeric/12-hex placeholder in list.json is not adopted as an id',
-    () {
+    test(
+      'a numeric/12-hex placeholder in list.json is not adopted as an id',
+      () {
+        expect(
+          shouldAdoptListAppId(
+            storedId: 'com.real.pkg',
+            listId: '100000000009',
+            storedInstalled: false,
+            listIdAlreadyTracked: false,
+          ),
+          isFalse,
+        );
+        expect(
+          shouldAdoptListAppId(
+            storedId: 'com.real.pkg',
+            listId: 'a1b2c3d4e5f6',
+            storedInstalled: false,
+            listIdAlreadyTracked: false,
+          ),
+          isFalse,
+        );
+      },
+    );
+  });
+
+  group('list removals (apps the user deleted must stay deleted)', () {
+    // The regression: list.json was merged on every startup, so an app removed
+    // from the app list came back on the next launch.
+    App trackedApp(String url, List<String> groups) => App(
+      id: 'com.example.app',
+      url: url,
+      author: 'example',
+      name: 'Example',
+      latestVersion: '',
+      preferredApkIndex: 0,
+      additionalSettings: const {},
+      groups: groups,
+    );
+
+    test('only grouped (list-sourced) apps are recorded when removed', () {
       expect(
-        shouldAdoptListAppId(
-          storedId: 'com.real.pkg',
-          listId: '100000000009',
-          storedInstalled: false,
-          listIdAlreadyTracked: false,
-        ),
-        isFalse,
+        groupedListUrlsOf([
+          trackedApp('https://github.com/PT123123/bitwardendroid', ['mine']),
+          trackedApp('https://github.com/example/hand-added', []),
+        ]),
+        ['https://github.com/PT123123/bitwardendroid'],
       );
+    });
+
+    test('a removal keeps skipping the app while it is untracked', () {
       expect(
-        shouldAdoptListAppId(
-          storedId: 'com.real.pkg',
-          listId: 'a1b2c3d4e5f6',
-          storedInstalled: false,
-          listIdAlreadyTracked: false,
+        resolveListSuppression(
+          suppressed: ['https://github.com/PT123123/bitwardendroid'],
+          trackedUrls: {'https://github.com/PT123123/quire-compose'},
         ),
-        isFalse,
+        ['https://github.com/PT123123/bitwardendroid'],
+      );
+    });
+
+    test('a removal is forgotten once the URL is tracked again', () {
+      expect(
+        resolveListSuppression(
+          suppressed: ['https://github.com/PT123123/bitwardendroid'],
+          trackedUrls: {'https://github.com/PT123123/bitwardendroid'},
+        ),
+        isEmpty,
       );
     });
   });

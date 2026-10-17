@@ -7,7 +7,6 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
@@ -123,10 +122,9 @@ extension AppsProviderLifecycle on AppsProvider {
   /// over so the user's list is not lost. No-op when the dir is populated.
   Future<void> _healAppsDir(Directory active) async {
     try {
-      final hasApps = active
-          .listSync()
-          .whereType<File>()
-          .any((f) => f.path.toLowerCase().endsWith('.json'));
+      final hasApps = active.listSync().whereType<File>().any(
+        (f) => f.path.toLowerCase().endsWith('.json'),
+      );
       if (hasApps) return;
       final candidates = <Directory>[];
       if (Platform.isAndroid) {
@@ -312,8 +310,8 @@ extension AppsProviderLifecycle on AppsProvider {
       // resolving to the same installed package.
       final Set<String> claimedInstalledPackages = {};
       Future<Map<String, String>>? installedLabelsFuture;
-      Future<Map<String, String>> installedLabels() =>
-          installedLabelsFuture ??= getInstalledPackageLabels(installedAppsData);
+      Future<Map<String, String>> installedLabels() => installedLabelsFuture ??=
+          getInstalledPackageLabels(installedAppsData);
       // TODO: Replace listSync() with async list().toList()
       final activeAppsDir = await getAppsDir();
       await _healAppsDir(activeAppsDir);
@@ -383,7 +381,9 @@ extension AppsProviderLifecycle on AppsProvider {
                     final cachedPackageName = app.cachedInstalledPackageName;
                     final cachedInfo =
                         cachedPackageName != null &&
-                            !claimedInstalledPackages.contains(cachedPackageName)
+                            !claimedInstalledPackages.contains(
+                              cachedPackageName,
+                            )
                         ? installedAppsMap[cachedPackageName]
                         : null;
                     if (cachedInfo != null) {
@@ -476,7 +476,7 @@ extension AppsProviderLifecycle on AppsProvider {
                     ),
                   );
                 } catch (e) {
-                  if (e is RateLimitError || e is SocketException) {
+                  if (e is SocketException) {
                     AppLogger.info(
                       'Transient error loading app ${app!.id}, will retry: $e',
                     );
@@ -754,6 +754,11 @@ extension AppsProviderLifecycle on AppsProvider {
         await saveApps(apps, attemptToCorrectInstallStatus: false);
       }
       if (remove) {
+        // Deleting a grouped-list app is a decision, not an accident: record it
+        // so the next manual `list.json` sync does not re-add it.
+        for (final url in groupedListUrlsOf(apps)) {
+          settingsProvider.suppressGroupedListApp(url);
+        }
         await removeApps(apps.map((e) => e.id).toList());
       }
       return remove;

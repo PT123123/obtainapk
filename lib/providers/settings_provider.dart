@@ -451,6 +451,100 @@ class SettingsProvider with ChangeNotifier {
     // by the app store change anyway.
   }
 
+  /// Source of the grouped app list (`list.json`) used by the manual sync.
+  String get groupedListUrl {
+    final stored = getSettingString('groupedListUrl')?.trim();
+    return (stored == null || stored.isEmpty) ? defaultGroupedListUrl : stored;
+  }
+
+  set groupedListUrl(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty || trimmed == defaultGroupedListUrl) {
+      prefs?.remove('groupedListUrl');
+    } else {
+      prefs?.setString('groupedListUrl', trimmed);
+    }
+    notifyListeners();
+  }
+
+  /// App-repo URLs the user removed from a grouped list. The manual sync never
+  /// re-adds these, which is what makes a deletion stick (earlier builds merged
+  /// `list.json` on every launch and resurrected every removed app).
+  List<String> get groupedListSuppressed {
+    final raw = getSettingString('groupedListSuppressed');
+    if (raw == null) return const [];
+    try {
+      return (jsonDecode(raw) as List<dynamic>)
+          .whereType<String>()
+          .where((e) => e.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  set groupedListSuppressed(List<String> urls) {
+    prefs?.setString(
+      'groupedListSuppressed',
+      jsonEncode(urls.toSet().toList()..sort()),
+    );
+    notifyListeners();
+  }
+
+  /// Remembers [url] (an app removed by the user) so the sync skips it later.
+  void suppressGroupedListApp(String url) {
+    final urls = groupedListSuppressed.toSet()..add(url);
+    groupedListSuppressed = urls.toList();
+  }
+
+  /// Lets the sync add [url] again (used by the restore action and when the app
+  /// turns up in the store a second time).
+  void restoreGroupedListApp(String url) {
+    final urls = groupedListSuppressed.where((e) => e != url).toList();
+    if (urls.length != groupedListSuppressed.length) {
+      groupedListSuppressed = urls;
+    }
+  }
+
+  /// Timestamp + outcome of the last manual `list.json` sync, shown in Settings
+  /// so a silent sync failure can be told apart from a sync that added nothing.
+  ({int at, int added, int updated, int suppressed, String source})?
+  get groupedListLastSync {
+    final raw = getSettingString('groupedListLastSync');
+    if (raw == null) return null;
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return (
+        at: (decoded['at'] as num?)?.toInt() ?? 0,
+        added: (decoded['added'] as num?)?.toInt() ?? 0,
+        updated: (decoded['updated'] as num?)?.toInt() ?? 0,
+        suppressed: (decoded['suppressed'] as num?)?.toInt() ?? 0,
+        source: (decoded['source'] as String?) ?? '',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void recordGroupedListSync({
+    required int added,
+    required int updated,
+    required int suppressed,
+    required String source,
+  }) {
+    prefs?.setString(
+      'groupedListLastSync',
+      jsonEncode({
+        'at': DateTime.now().millisecondsSinceEpoch,
+        'added': added,
+        'updated': updated,
+        'suppressed': suppressed,
+        'source': source,
+      }),
+    );
+    notifyListeners();
+  }
+
   bool get hideTrackOnlyWarning {
     return _getBool('hideTrackOnlyWarning') ?? false;
   }

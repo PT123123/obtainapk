@@ -12,8 +12,6 @@ import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/utils/min_update_age.dart';
 
 class GitHub extends AppSource {
-  static const int _fallbackCacheSeconds = 3600;
-
   GitHub({bool hostChanged = false}) {
     name = 'GitHub';
     hosts = ['github.com'];
@@ -283,14 +281,6 @@ class GitHub extends AppSource {
     } else {
       return null;
     }
-  }
-
-  @override
-  Future<String?> getSourceNote() async {
-    if (!hostChanged && (await getTokenIfAny({})) == null) {
-      return '${tr('githubSourceNote')} ${hostChanged ? tr('addInfoBelow') : tr('addInfoInSettings')}';
-    }
-    return null;
   }
 
   @override
@@ -953,26 +943,10 @@ class GitHub extends AppSource {
     }
   }
 
-  void rateLimitErrorCheck(Response res) {
-    if (res.headers['x-ratelimit-remaining'] == '0') {
-      final now = DateTime.now();
-      final resetEpochSeconds =
-          int.tryParse(res.headers['x-ratelimit-reset'] ?? '') ??
-          now.millisecondsSinceEpoch ~/ 1000 + _fallbackCacheSeconds;
-      final nowSeconds = now.millisecondsSinceEpoch ~/ 1000;
-      final remainingMinutes = ((resetEpochSeconds - nowSeconds) / 60)
-          .ceil()
-          .clamp(0, 9999);
-      throw RateLimitError(remainingMinutes);
-    }
-  }
-
-  /// Throws the actual GitHub error for failed API responses: rate limits
-  /// (when the headers say so) and auth problems (e.g. a token that is not
-  /// authorized for this repository), which the generic handler would
-  /// otherwise mislabel as a rate limit (see #3211).
+  /// Throws the actual GitHub error for a failed API response (e.g. a token
+  /// that is not authorized for this repository), so the server's own message
+  /// reaches the user instead of a generic status code (see #3211).
   void githubErrorCheck(Response res) {
-    rateLimitErrorCheck(res);
     if (res.statusCode == 401 || res.statusCode == 403) {
       String? message;
       try {
@@ -981,9 +955,7 @@ class GitHub extends AppSource {
         // Not a JSON error body; fall through to the generic handler.
         message = null;
       }
-      if (message != null &&
-          message.isNotEmpty &&
-          !message.toLowerCase().contains('rate limit')) {
+      if (message != null && message.isNotEmpty) {
         throw ObtainiumError(message);
       }
     }

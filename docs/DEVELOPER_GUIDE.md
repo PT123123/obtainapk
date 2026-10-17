@@ -424,12 +424,31 @@ The `claimed` set prevents two tracked apps from resolving to the same installed
 `loadApps()` (`apps_provider_lifecycle.dart`) calls this for each app that fails the
 primary package-name lookup.
 
+#### Grouped-list (`list.json`) sync is manual
+
+`AppsProvider.syncGroupedList()` (`apps_provider_import_export.dart`) fetches the list from
+`SettingsProvider.groupedListUrl` (default `defaultGroupedListUrl` in `main.dart`), retries
+through a `ghproxy.com` mirror, then falls back to the bundled `assets/list.json`, and hands
+the JSON to `mergeGroupedList`. It is reached **only** from *Settings → 应用列表* — startup
+must not call it: an automatic merge re-added every app the user had deleted (observed with
+Bitwarden, which came back on each launch), and the bundled asset keeps doing so for every
+install that predates the deletion.
+
+Deletions are therefore recorded: `removeAppsWithModal` passes every removed app through
+`groupedListUrlsOf` (only apps carrying `App.groups` tags, i.e. list-sourced ones) into
+`SettingsProvider.groupedListSuppressed`, and `mergeGroupedList` skips those URLs unless the
+same URL is tracked again — `resolveListSuppression` drops such stale records, as does the
+**恢复** button on the settings page. Both helpers are pure and covered in
+`test/grouped_list_dedupe_test.dart`. Each sync writes time / source / added / updated /
+skipped counts to `SettingsProvider.groupedListLastSync` so a failed fetch is distinguishable
+from an empty one.
+
 #### list.json package-ID rename (`shouldAdoptListAppId`)
 
 A repo can change its `applicationId` (the AnkiDroid fork became
 `com.pt123123.ankiplus` from `2.25.0beta3`). The stored record still points at the old
 package, so every download is refused by the ID-change guard and piles up uninstalled in
-the cache. On startup, `mergeGroupedList` re-points such a record to the list's new ID via
+the cache. During a sync, `mergeGroupedList` re-points such a record to the list's new ID via
 `shouldAdoptListAppId`. Adoption requires all of:
 
 - the list gives a **different** ID than the store uses for the same URL;

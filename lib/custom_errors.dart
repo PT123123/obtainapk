@@ -105,15 +105,6 @@ class HTTPStatusError extends ObtainiumError {
     : super(message, code: 'HTTP_ERROR');
 }
 
-class RateLimitError extends ObtainiumError {
-  final int remainingMinutes;
-  RateLimitError(this.remainingMinutes)
-    : super.withCode(
-        'RATE_LIMIT',
-        data: {'remainingMinutes': remainingMinutes},
-      );
-}
-
 class InvalidURLError extends ObtainiumError {
   InvalidURLError(String sourceName)
     : super.withCode('INVALID_URL', data: {'sourceName': sourceName});
@@ -281,10 +272,6 @@ String localizeErrorCode(String code, Map<String, dynamic>? data) {
       data?['note'] != null && (data!['note'] as String).isNotEmpty
           ? '${tr('noReleaseFound')}\n\n${data['note']}'
           : tr('noReleaseFound'),
-    'RATE_LIMIT' => plural(
-      'tooManyRequestsTryAgainInMinutes',
-      data?['remainingMinutes'] ?? 0,
-    ),
     'INVALID_URL' => tr(
       'invalidURLForSource',
       args: [data?['sourceName'] ?? ''],

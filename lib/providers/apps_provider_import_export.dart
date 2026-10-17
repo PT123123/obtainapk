@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
@@ -214,7 +215,11 @@ extension AppsProviderImportExport on AppsProvider {
   /// into the store. Each app is tagged with its group id in [App.groups].
   /// Existing apps keep all their other data (pinned, installedVersion,
   /// additionalSettings, …) — only the group tags are unioned in. New apps are
-  /// added. Safe to call on every startup: it is idempotent.
+  /// added. Safe to call repeatedly: it is idempotent.
+  ///
+  /// Apps the user removed from a grouped list stay removed: their URL is in
+  /// [SettingsProvider.groupedListSuppressed] and is skipped instead of re-added.
+  /// A tombstone for a URL that is tracked again (manually re-added) is dropped.
   ///
   /// Existing apps are matched by ID first, then by URL: a list entry whose
   /// placeholder ID was replaced by the real package name on install (or a
@@ -224,9 +229,11 @@ extension AppsProviderImportExport on AppsProvider {
   ///
   /// Group metadata (`{id,name}`) is persisted to settings so the group
   /// switcher can render its chips without re-fetching.
-  Future<void> mergeGroupedList(String raw) async {
-    // The startup call races [loadApps]; the store must be fully loaded before
-    // the lookups below or every existing app would look missing.
+  Future<({int added, int updated, int suppressed})> mergeGroupedList(
+    String raw,
+  ) async {
+    // Merging reads the whole store, so it must not race [loadApps] or every
+    // existing app would look missing and get re-added.
     await waitForAppsToLoad();
     dynamic decoded;
     try {
@@ -319,10 +326,33 @@ extension AppsProviderImportExport on AppsProvider {
     apps.forEach((_, e) {
       existingByUrl.putIfAbsent(e.app.url, () => e.app);
     });
+    // Apps the user deleted from a grouped list must not come back with the next
+    // sync; they are skipped until restored in Settings.
+    final previouslySuppressed = settingsProvider.groupedListSuppressed;
+    final suppressedUrls = resolveListSuppression(
+      suppressed: previouslySuppressed,
+      trackedUrls: existingByUrl.keys.toSet(),
+    ).toSet();
+    if (suppressedUrls.length != previouslySuppressed.length) {
+      final revived = previouslySuppressed.where(
+        (u) => !suppressedUrls.contains(u),
+      );
+      settingsProvider.groupedListSuppressed = suppressedUrls.toList();
+      AppLogger.info(
+        'Cleared list removals for re-tracked apps: ${revived.join(', ')}',
+      );
+    }
     final List<({App stored, App adopted})> adoptions = [];
+    var added = 0;
+    var updated = 0;
+    var suppressed = 0;
     parsedApps.forEach((id, parsed) {
       final tags = tagsByAppId[id]!.toList();
       final existing = apps[id]?.app ?? existingByUrl[parsed.url];
+      if (existing == null && suppressedUrls.contains(parsed.url)) {
+        suppressed++;
+        return;
+      }
       if (existing != null &&
           shouldAdoptListAppId(
             storedId: existing.id,
@@ -342,11 +372,10 @@ extension AppsProviderImportExport on AppsProvider {
             // The package/label learned under the old ID belong to the old
             // package - dropping them lets the next load re-learn from the
             // device instead of re-matching a stale name.
-            additionalSettings: Map<String, dynamic>.from(
-              existing.additionalSettings,
-            )
-              ..remove('installedPackageName')
-              ..remove('appLabel'),
+            additionalSettings:
+                Map<String, dynamic>.from(existing.additionalSettings)
+                  ..remove('installedPackageName')
+                  ..remove('appLabel'),
           ),
         ));
         return;
@@ -366,7 +395,8 @@ extension AppsProviderImportExport on AppsProvider {
         final carriedPackage =
             carriedInstalledPackage[existing.id] ??
             existing.cachedInstalledPackageName;
-        final packageChanged = carriedPackage != existing.cachedInstalledPackageName;
+        final packageChanged =
+            carriedPackage != existing.cachedInstalledPackageName;
         // Only rewrite the app when something actually changed, so we never
         // clobber a user's pinned / renamed / reconfigured app on every launch.
         if (groupsChanged || categoriesChanged || packageChanged) {
@@ -383,9 +413,11 @@ extension AppsProviderImportExport on AppsProvider {
             );
           }
           toSave.add(merged);
+          updated++;
         }
       } else {
         toSave.add(parsed.copyWith(groups: tags));
+        added++;
       }
     });
 
@@ -408,6 +440,71 @@ extension AppsProviderImportExport on AppsProvider {
     if (groupMeta.isNotEmpty) {
       settingsProvider.groupedListGroups = groupMeta;
     }
+    return (
+      added: added,
+      updated: updated + adoptions.length,
+      suppressed: suppressed,
+    );
+  }
+
+  /// Pulls the grouped app list (`list.json`) and merges it into the store.
+  ///
+  /// Only ever called from the user's action in Settings - it used to run on
+  /// every startup, which re-added apps the user had deleted. Tries the
+  /// configured URL, then a proxy mirror of it, then the bundled
+  /// `assets/list.json` so the groups still work offline.
+  Future<({String source, int added, int updated, int suppressed})>
+  syncGroupedList() async {
+    final url = settingsProvider.groupedListUrl;
+    final candidateUrls = <String>[url, 'https://ghproxy.com/$url'];
+    final failures = <String>[];
+    String? raw;
+    var source = '';
+    for (final u in candidateUrls) {
+      try {
+        final resp = await http
+            .get(Uri.parse(u))
+            .timeout(const Duration(seconds: 12));
+        if (resp.statusCode >= 200 &&
+            resp.statusCode < 300 &&
+            resp.body.trim().isNotEmpty) {
+          raw = resp.body;
+          source = u;
+          break;
+        }
+        failures.add('$u → HTTP ${resp.statusCode}');
+      } catch (e) {
+        AppLogger.warn('Grouped list fetch failed for $u: $e');
+        failures.add('$u → $e');
+      }
+    }
+    if (raw == null) {
+      raw = await rootBundle
+          .loadString('assets/list.json')
+          .catchError((_) => '');
+      source = 'assets/list.json';
+    }
+    if (raw.trim().isEmpty) {
+      throw ObtainiumError('${tr('failedToImport')}: ${failures.join('; ')}');
+    }
+    final merged = await mergeGroupedList(raw);
+    settingsProvider.recordGroupedListSync(
+      added: merged.added,
+      updated: merged.updated,
+      suppressed: merged.suppressed,
+      source: source,
+    );
+    AppLogger.info(
+      'Merged grouped list from $source: '
+      '${merged.added} added, ${merged.updated} updated, '
+      '${merged.suppressed} skipped as removed',
+    );
+    return (
+      source: source,
+      added: merged.added,
+      updated: merged.updated,
+      suppressed: merged.suppressed,
+    );
   }
 
   bool _listEquals(List<String> a, List<String> b) {
@@ -507,10 +604,7 @@ class ExportSchema {
   final realIds = ids.where((id) => !isPlaceholderId(id)).toList();
   if (realIds.length >= 2) return (realIds.first, const []);
   final keeperId = realIds.isNotEmpty ? realIds.first : ids.first;
-  return (
-    keeperId,
-    ids.where((id) => id != keeperId).toList(),
-  );
+  return (keeperId, ids.where((id) => id != keeperId).toList());
 }
 
 /// Whether a list.json entry's package [listId] should replace the [storedId]
@@ -533,3 +627,19 @@ bool shouldAdoptListAppId({
   return !(RegExp(r'^[0-9]+$').hasMatch(listId) ||
       RegExp(r'^[0-9a-f]{12}$').hasMatch(listId));
 }
+
+/// Tombstones that still apply: an app removed from a grouped list stays out of
+/// later syncs, but one whose URL is tracked again was clearly re-added by hand,
+/// so its removal record is dropped.
+List<String> resolveListSuppression({
+  required List<String> suppressed,
+  required Set<String> trackedUrls,
+}) => suppressed.where((url) => !trackedUrls.contains(url)).toList();
+
+/// Which of the removed apps were grouped-list apps.
+///
+/// Only those are recorded as removals: an app the user added by hand is
+/// unrelated to `list.json` and must not be filtered out of a later sync. The
+/// store's [App.groups] tags are what marks an entry as list-sourced.
+List<String> groupedListUrlsOf(Iterable<App> apps) =>
+    apps.where((a) => a.groups.isNotEmpty).map((a) => a.url).toList();

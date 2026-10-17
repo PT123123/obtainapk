@@ -70,14 +70,6 @@
           "preferredApkIndex": 0
         },
         {
-          "id": "100000000009",
-          "url": "https://github.com/PT123123/bitwardendroid",
-          "author": "PT123123",
-          "name": "Bitwarden",
-          "additionalSettings": "{\"about\": \"Bitwarden 密码管理器，自构建\"}",
-          "preferredApkIndex": 0
-        },
-        {
           "id": "100000000010",
           "url": "https://github.com/PT123123/quire-compose",
           "author": "PT123123",

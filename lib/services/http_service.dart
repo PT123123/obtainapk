@@ -289,12 +289,6 @@ class HttpService {
 
   ObtainiumError getHttpError(http.Response res) {
     if (res.statusCode == 404) return NoReleasesError();
-    if (res.statusCode == 429 || res.statusCode == 403) {
-      final retryAfter = res.headers['retry-after'];
-      final secs = retryAfter != null ? int.tryParse(retryAfter) : null;
-      if (secs != null) return RateLimitError((secs / 60).ceil());
-      return RateLimitError(1);
-    }
     return ObtainiumError(
       (res.reasonPhrase != null && res.reasonPhrase!.isNotEmpty)
           ? res.reasonPhrase!

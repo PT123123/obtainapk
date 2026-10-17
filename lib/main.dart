@@ -19,7 +19,6 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:permission_handler/permission_handler.dart';
-import 'package:http/http.dart' as http;
 import 'package:workmanager/workmanager.dart';
 
 List<MapEntry<Locale, String>> supportedLocales = const [
@@ -55,10 +54,10 @@ List<MapEntry<Locale, String>> supportedLocales = const [
 ];
 const fallbackLocale = Locale('en');
 
-/// Default URL of the grouped app list (list.json) pulled on every startup.
-/// ObtainAPK merges its groups into the user's app list and tags each app with
-/// its group id. Overridable at runtime via the `groupedListUrl` shared-prefs
-/// key if a fork needs a different source.
+/// Default URL of the grouped app list (list.json), used by the manual sync in
+/// Settings. ObtainAPK merges its groups into the user's app list and tags each
+/// app with its group id. Overridden by the `groupedListUrl` shared-prefs key
+/// (SettingsProvider.groupedListUrl) if a fork needs a different source.
 const String defaultGroupedListUrl =
     'https://raw.githubusercontent.com/PT123123/obtainapk/main/list.json';
 final Set<Locale> supportedLocaleSet = supportedLocales
@@ -304,10 +303,9 @@ class _ObtainiumState extends State<Obtainium> {
     // (marketplace/apps.json). Flag-based so it runs for fresh installs AND
     // upgrades of existing installs, but never re-adds apps the user
     // deleted afterwards.
-    // NOTE: The grouped list (list.json) is now the source of truth for the
-    // default apps and is pulled on EVERY startup via
-    // _fetchGroupedListOnStartup(); marketplace/apps.json remains only as a
-    // manually-importable file referenced by the README.
+    // NOTE: The grouped list (list.json) is no longer pulled at startup - doing
+    // that re-added every app the user had deleted. It is synced on demand from
+    // Settings → 应用列表 via AppsProvider.syncGroupedList().
     if (settings.prefs?.getBool('marketplaceDefaultsImported') != true) {
       unawaited(settings.prefs?.setBool('marketplaceDefaultsImported', true));
     }
@@ -318,52 +316,6 @@ class _ObtainiumState extends State<Obtainium> {
       settings.resetLocaleSafe(context);
     } else if (settings.forcedLocale != null) {
       context.setLocale(settings.forcedLocale!);
-    }
-  }
-
-  /// Pulls the grouped app list (list.json) on every startup. Tries the remote
-  /// URL first (with a mirror fallback), then falls back to the bundled
-  /// [assets/list.json] so the groups are still available offline. The merged
-  /// apps are tagged with their group id; existing user apps are never clobbered.
-  Future<void> _fetchGroupedListOnStartup(AppsProvider appsProvider) async {
-    final candidateUrls = <String>[
-      defaultGroupedListUrl,
-      'https://ghproxy.com/https://raw.githubusercontent.com/PT123123/obtainapk/main/list.json',
-    ];
-    String? raw;
-    for (final u in candidateUrls) {
-      try {
-        final resp = await http
-            .get(Uri.parse(u))
-            .timeout(const Duration(seconds: 12));
-        if (resp.statusCode >= 200 &&
-            resp.statusCode < 300 &&
-            resp.body.trim().isNotEmpty) {
-          raw = resp.body;
-          break;
-        }
-      } catch (e) {
-        AppLogger.warn('Grouped list fetch failed for $u: $e');
-      }
-    }
-    raw ??= await rootBundle
-        .loadString('assets/list.json')
-        .catchError((_) => '');
-    if (raw.trim().isEmpty) {
-      AppLogger.warn(
-        'No grouped list available (remote + bundled fallback both failed).',
-      );
-      return;
-    }
-    try {
-      await appsProvider.mergeGroupedList(raw);
-      AppLogger.info('Merged grouped list into app store.');
-    } catch (e, stack) {
-      AppLogger.error(
-        e,
-        stackTrace: stack,
-        message: 'mergeGroupedList failed',
-      );
     }
   }
 
@@ -388,7 +340,6 @@ class _ObtainiumState extends State<Obtainium> {
 
       unawaited(_syncWorkManager());
       _handleFirstRun(settingsProvider, appsProvider, context);
-      unawaited(_fetchGroupedListOnStartup(appsProvider));
 
       if (!_launchByNotifChecked) {
         _launchByNotifChecked = true;

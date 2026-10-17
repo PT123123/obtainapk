@@ -15,7 +15,7 @@ This is a customized fork of Obtainium published as **ObtainAPK** (package ID `c
 - **Keep downloaded APKs**: enable *Settings → Keep downloaded APKs* to keep each APK after a successful install in the public `Download/Obtainium` folder instead of silently deleting it. Download notifications also show the exact file path.
 - **Downloaded APKs on the app detail page**: each app's detail page has an **已下载的 APK** section listing every APK file kept on disk for it — download-cache files, split-APK bundle folders and the public `Download/Obtainium` copies — with file name, size and write time. It rescans when a download/install finishes, so a fresh APK appears without leaving the page.
 - **Manually maintained app list**: the [`marketplace/apps.json`](./marketplace/apps.json) file holds the app configurations this marketplace offers.
-- **Grouped app list (`list.json`)**: the [`list.json`](./list.json) file at the repo root is the source of truth for the bundled app groups. The app pulls it on every startup (remote URL with mirror fallback, then a bundled copy) and shows a clickable **group switcher** above the app list (`全部` / `mine` / `open`). See [Grouped app list](#grouped-app-list-listjson) below.
+- **Grouped app list (`list.json`)**: the [`list.json`](./list.json) file at the repo root is the source of truth for the app groups. It is **not** fetched automatically anymore — you pull it from *Settings → 应用列表* — and the app shows a clickable **group switcher** above the app list (`全部` / `mine` / `open`). See [Grouped app list](#grouped-app-list-listjson) below.
 - **App drawer (应用列表侧边栏)**: the app list page has a sidebar (hamburger button in the app bar, or swipe from the left edge) listing every tracked app with its **icon**. Each entry expands to show identifying details: tracked ID, the real on-device package name, how the two were matched, installed/latest versions, source URL and group tags — plus search and one-tap copy of IDs. See [App drawer & install matching cache](#app-drawer--install-matching-cache) below.
 - **Build-number version matching**: a release tagged `1.6.31+2371` is recognized as the *same* build as the on-device `1.6.31` when the installed package's `versionCode` equals the `+` suffix (build tools like Flutter drop the `+N` from the versionName baked into the APK). This stops the permanent "outdated" display / re-install loop for such apps.
 
@@ -48,16 +48,25 @@ Current groups:
 
 #### Behavior
 
-- **Startup pull**: on every launch the app fetches `list.json` from
-  `https://raw.githubusercontent.com/PT123123/obtainapk/main/list.json`
-  (with a `ghproxy.com` mirror fallback), and falls back to the bundled
-  `assets/list.json` if the network is unavailable. Each app is merged into your
-  store and tagged with its group id in `App.groups`. Existing user apps are
+- **Manual sync**: *Settings → 应用列表* has a **从 GitHub 同步应用列表** button.
+  It fetches `list.json` from the configured URL (default
+  `https://raw.githubusercontent.com/PT123123/obtainapk/main/list.json`, with a
+  `ghproxy.com` mirror fallback) and falls back to the bundled
+  `assets/list.json` when the network is unavailable. Each app is merged into
+  your store and tagged with its group id in `App.groups`. Existing user apps are
   **never clobbered** — only the group tag is added; your pinned / renamed /
-  reconfigured apps are preserved.
+  reconfigured apps are preserved. Nothing is fetched at startup: earlier builds
+  merged the list on every launch, which re-added every app you had deleted.
+- **Removed apps stay removed**: deleting a grouped-list app records its repo URL
+  (`SettingsProvider.groupedListSuppressed`), and later syncs skip that entry
+  instead of resurrecting it. The records are listed under *Settings → 应用列表*
+  with a **恢复** button; re-adding the same URL by hand also clears the record.
+- **Sync outcome is shown**: the settings page keeps the last sync time, source,
+  and how many apps were added / updated / skipped, so a silent no-op can be told
+  apart from a failed fetch.
 - **Package-ID rename is adopted**: if an app that is still tracked but **not
   installed** appears under a different package id in `list.json` (matched by
-  the same repo URL), the store adopts the new id at startup instead of keeping
+  the same repo URL), the store adopts the new id while syncing instead of keeping
   the stale one. This is how a fork that changes its `applicationId` heals
   itself: the old file is deleted, the new id is saved, and the learned
   `installedPackageName` / `appLabel` cache is dropped so name-matching starts
@@ -68,14 +77,15 @@ Current groups:
   user-managed and anything not registered in the category list gets pruned and
   persisted away by the category UI — when groups were stored there, simply
   opening an app's detail page stripped the tag and the app dropped out of its
-  group. Any legacy tag found in `categories` is migrated to `groups` on the
-  next startup.
+  group. Any legacy tag found in `categories` is migrated to `groups` by the
+  next sync.
 - **Group switcher**: a horizontal, clickable row of chips sits above the app
   list — `全部` (all), `mine`, `open`. Tapping a chip filters the list to that
   group. The selection persists across restarts.
-- **Editing**: to change the bundled groups, edit `list.json` at the repo root
-  **and** its copy `assets/list.json` (the bundled fallback), then push. The
-  next app launch pulls the update.
+- **Editing**: to change the groups, edit `list.json` at the repo root **and**
+  its copy `assets/list.json` (the bundled fallback), then push. Phones pick the
+  change up the next time you press **从 GitHub 同步应用列表** — pushing alone no
+  longer changes an installed app list.
 
 ### App drawer & install matching cache
 

@@ -199,8 +199,7 @@ extension AppsProviderUpdates on AppsProvider {
             return MapEntry(newApp, isUpdate);
           }
         } catch (e) {
-          if ((e is RateLimitError || e is SocketException) &&
-              throwErrorsForRetry) {
+          if (e is SocketException && throwErrorsForRetry) {
             rethrow;
           }
           if (e is RepositoryRenamedError) {

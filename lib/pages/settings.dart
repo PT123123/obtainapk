@@ -313,6 +313,16 @@ class _SettingsPageState extends State<SettingsPage> {
                     _buildUpdatesSection(ctx, showBgSection, sdk),
               ),
             ),
+            _settingsRow(
+              context,
+              icon: Icons.dynamic_form_outlined,
+              title: '应用列表',
+              onTap: () => _pushPage(
+                context,
+                title: '应用列表',
+                childBuilder: (_) => const _GroupedListSection(),
+              ),
+            ),
             if (hasSourceSpecificSettings)
               _settingsRow(
                 context,
@@ -617,10 +627,7 @@ class _SettingsPageState extends State<SettingsPage> {
           label: Text(tr('downloadStrategy')),
           initialSelection: settingsProvider.downloadStrategy,
           dropdownMenuEntries: [
-            DropdownMenuEntry(
-              value: 'auto',
-              label: tr('downloadStrategyAuto'),
-            ),
+            DropdownMenuEntry(value: 'auto', label: tr('downloadStrategyAuto')),
             DropdownMenuEntry(
               value: 'mirrorFirst',
               label: tr('downloadStrategyMirrorFirst'),
@@ -672,10 +679,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   value: 'ghproxy.net',
                   label: 'ghproxy.net',
                 ),
-                DropdownMenuEntry(
-                  value: '',
-                  label: tr('downloadMirrorNone'),
-                ),
+                DropdownMenuEntry(value: '', label: tr('downloadMirrorNone')),
               ],
               onSelected: (value) {
                 if (value != null) {
@@ -1196,6 +1200,132 @@ class _MinimumUpdateAgeSliderTileState
             ? Text("${tr('minimumUpdateAgeDays')}: $_label")
             : const SizedBox(height: 20),
         ageSlider,
+      ],
+    );
+  }
+}
+
+/// Settings for the grouped app list (`list.json`).
+///
+/// The list is no longer merged on startup - that resurrected every app the
+/// user had deleted. Syncing is this page's button, and apps removed from a
+/// group are listed here so they can be brought back.
+class _GroupedListSection extends StatefulWidget {
+  const _GroupedListSection();
+
+  @override
+  State<_GroupedListSection> createState() => _GroupedListSectionState();
+}
+
+class _GroupedListSectionState extends State<_GroupedListSection> {
+  bool _syncing = false;
+
+  Future<void> _sync() async {
+    if (_syncing) return;
+    setState(() => _syncing = true);
+    try {
+      final result = await context.read<AppsProvider>().syncGroupedList();
+      if (!mounted) return;
+      showMessage(
+        '同步完成\n新增 ${result.added} 个，更新 ${result.updated} 个，'
+        '跳过已剔除 ${result.suppressed} 个\n来源：${result.source}',
+        context,
+      );
+    } catch (e) {
+      if (mounted) showError(e, context);
+    }
+    if (mounted) setState(() => _syncing = false);
+  }
+
+  String _lastSyncLine(DateTime at) =>
+      '上次同步：${DateFormat('yyyy-MM-dd HH:mm').format(at.toLocal())}';
+
+  @override
+  Widget build(BuildContext context) {
+    final settingsProvider = context.watch<SettingsProvider>();
+    final suppressed = settingsProvider.groupedListSuppressed;
+    final lastSync = settingsProvider.groupedListLastSync;
+    final cs = Theme.of(context).colorScheme;
+    final captionStyle = Theme.of(context).textTheme.labelSmall;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 3,
+      children: [
+        CardTile(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: _syncing ? null : _sync,
+              child: _syncing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('从 GitHub 同步应用列表'),
+            ),
+          ),
+        ),
+        CardTile(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+          child: Text(
+            lastSync == null
+                ? '应用列表不会开机自动拉取，点上面的按钮才会合并进来。'
+                : '${_lastSyncLine(DateTime.fromMillisecondsSinceEpoch(lastSync.at))}\n'
+                      '新增 ${lastSync.added} 个，更新 ${lastSync.updated} 个，'
+                      '跳过已剔除 ${lastSync.suppressed} 个\n'
+                      '来源：${lastSync.source}',
+            style: captionStyle,
+          ),
+        ),
+        ConnectedCard(
+          color: cs.surfaceContainerHighest,
+          child: GeneratedForm(
+            tileMode: true,
+            items: [
+              [
+                GeneratedFormTextField(
+                  'groupedListUrl',
+                  label: '应用列表地址（list.json）',
+                  required: false,
+                )..value = settingsProvider.groupedListUrl,
+              ],
+            ],
+            onValueChanges: (values, valid, isBuilding) {
+              if (valid && !isBuilding) {
+                settingsProvider.groupedListUrl =
+                    (values['groupedListUrl'] as String?) ?? '';
+              }
+            },
+          ),
+        ),
+        if (suppressed.isNotEmpty)
+          CardTile(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+            child: Text(
+              '已剔除的应用（同步时不再加回）',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ),
+        for (final url in suppressed)
+          CardTile(
+            padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.do_not_disturb_on_outlined,
+                  color: cs.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(url, style: captionStyle)),
+                TextButton(
+                  onPressed: () => settingsProvider.restoreGroupedListApp(url),
+                  child: const Text('恢复'),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }

@@ -213,8 +213,7 @@
     "followingURLsHadErrors": "下列 URL 存在错误：",
     "forgejoTokenLabel": "ForgeJo 访问令牌",
     "functionNotImplemented": "该类未实现此功能",
-    "githubPATLabel": "GitHub 个人访问令牌（提升 API 请求限额）",
-    "githubSourceNote": "使用访问令牌可避免触发 GitHub 的 API 请求限制。",
+    "githubPATLabel": "GitHub 个人访问令牌（私有仓库才需要）",
     "githubStarredRepos": "已星标的 GitHub 仓库",
     "globalApkFilterRegEx": "全局 APK 过滤正则表达式",
     "gitlabPATLabel": "GitLab 个人访问令牌",
@@ -461,10 +460,6 @@
     "tencentAppStore": "腾讯应用宝",
     "theme": "主题",
     "tooManyRedirects": "重定向次数过多",
-    "tooManyRequestsTryAgainInMinutes": {
-        "one": "请求过于频繁（API 速率限制）- 请在 {} 分钟后重试",
-        "other": "请求过于频繁（API 速率限制）- 请在 {} 分钟后重试"
-    },
     "trackOnly": "仅追踪",
     "trackOnlyAppDescription": "该应用的更新会被追踪，但 Obtainium 无法下载或安装它。",
     "trackOnlyInBrackets": "（仅追踪）",

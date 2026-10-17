@@ -1528,13 +1528,11 @@ _bgRunUpdateCheck(
         );
         if (toCheckApp.value < _bgUpdateMaxAttempts) {
           toRetry.add(MapEntry(toCheckApp.key, toCheckApp.value + 1));
-          int minRetryIntervalForThisApp = err is RateLimitError
-              ? (err.remainingMinutes * 60)
-              : err is ClientException
+          int minRetryIntervalForThisApp = err is ClientException
               ? (_bgClientExceptionRetryWaitSeconds)
               : (toCheckApp.value + 1);
           if (minRetryIntervalForThisApp > _bgUpdateMaxRetryWaitSeconds &&
-              err is! RateLimitError) {
+              err is! ClientException) {
             minRetryIntervalForThisApp = _bgUpdateMaxRetryWaitSeconds;
           }
           if (minRetryIntervalForThisApp > retryAfterXSeconds) {
@@ -1544,9 +1542,7 @@ _bgRunUpdateCheck(
           // Don't notify for "source not found" errors — just log and skip.
           // These are benign: the app source may be down or the URL changed.
           // The app will be marked in the list without a disruptive notification.
-          if (err is! RateLimitError &&
-              err is! NoReleasesError &&
-              err is! NoAPKError) {
+          if (err is! NoReleasesError && err is! NoAPKError) {
             toThrow.add(key, err, appName: errors!.appIdNames[key]);
           }
         }

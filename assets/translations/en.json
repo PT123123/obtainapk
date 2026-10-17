@@ -210,8 +210,7 @@
     "followingURLsHadErrors": "The following URLs had errors:",
     "forgejoTokenLabel": "ForgeJo access token",
     "functionNotImplemented": "This class has not implemented this function",
-    "githubPATLabel": "GitHub personal access token (increases rate limit)",
-    "githubSourceNote": "GitHub rate limiting can be avoided using an API key.",
+    "githubPATLabel": "GitHub personal access token (only needed for private repos)",
     "githubStarredRepos": "GitHub starred repositories",
     "globalApkFilterRegEx": "Global APK filter regex",
     "gitlabPATLabel": "GitLab personal access token",
@@ -458,10 +457,6 @@
     "tencentAppStore": "Tencent App Store",
     "theme": "Theme",
     "tooManyRedirects": "Too many redirects",
-    "tooManyRequestsTryAgainInMinutes": {
-        "one": "Too many requests (rate limited) - try again in {} minute",
-        "other": "Too many requests (rate limited) - try again in {} minutes"
-    },
     "trackOnly": "Track-only",
     "trackOnlyAppDescription": "The app will be tracked for updates, but Obtainium will not be able to download or install it.",
     "trackOnlyInBrackets": "(track-only)",
