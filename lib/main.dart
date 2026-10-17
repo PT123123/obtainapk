@@ -60,6 +60,10 @@ const fallbackLocale = Locale('en');
 /// (SettingsProvider.groupedListUrl) if a fork needs a different source.
 const String defaultGroupedListUrl =
     'https://raw.githubusercontent.com/PT123123/obtainapk/main/list.json';
+
+/// Default base URL of the LAN F-Droid repository (the near source) published
+/// by `lanpub serve`. Overridden by the `lanRepoUrl` shared-prefs key.
+const String defaultLanRepoUrl = 'http://192.168.5.34:8080';
 final Set<Locale> supportedLocaleSet = supportedLocales
     .map((e) => e.key)
     .toSet();

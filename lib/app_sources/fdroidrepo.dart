@@ -232,6 +232,14 @@ class FDroidRepo extends AppSource {
     return _fetchIndexV1(url, additionalSettings);
   }
 
+  /// How many apps the repository under [baseUrl] publishes. Lets the settings
+  /// page tell an unreachable LAN server apart from a reachable one.
+  Future<int> countPublishedApps(
+    String baseUrl,
+    Map<String, dynamic> additionalSettings,
+  ) async =>
+      (await _fetchIndex(baseUrl, additionalSettings)).entries.length;
+
   Future<_FdroidIndex?> _tryFetchIndexV2(
     String url,
     Map<String, dynamic> additionalSettings,
@@ -489,7 +497,10 @@ class FDroidRepo extends AppSource {
       final index = await _fetchIndex(standardUrl, additionalSettings);
       final entry = _findIndexEntry(index.entries, appIdOrName);
       if (entry == null) {
-        throw ObtainiumError(tr('appWithIdOrNameNotFound'));
+        throw ObtainiumError(
+          tr('appWithIdOrNameNotFound'),
+          code: 'APP_NOT_IN_REPO',
+        );
       }
       final releases = entry.versions;
       if (releases.isEmpty) {

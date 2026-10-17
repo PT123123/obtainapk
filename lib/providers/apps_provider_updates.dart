@@ -6,6 +6,7 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/services/near_source.dart';
 import 'package:obtainium/utils/min_update_age.dart';
 
 /// Update checking and pending-update bookkeeping for [AppsProvider].
@@ -23,6 +24,9 @@ extension AppsProviderUpdates on AppsProvider {
       return null;
     }
     final SourceProvider sourceProvider = SourceProvider();
+    if (NearSource(settingsProvider).isUsedFor(currentApp)) {
+      return await fetchNearUpdate(currentApp);
+    }
     App newApp = await sourceProvider.getApp(
       sourceProvider.getSource(
         currentApp.url,
@@ -43,6 +47,27 @@ extension AppsProviderUpdates on AppsProvider {
       newApp = newApp.copyWith(preferredApkIndex: 0);
     }
     return newApp;
+  }
+
+  /// Fetches [currentApp] from the LAN repository (the near source).
+  ///
+  /// Only the version and APK URLs come from the repo; the tracked ID, URL and
+  /// per-app settings stay as they are, so a near build doesn't rewrite the
+  /// app's identity.
+  Future<App> fetchNearUpdate(App currentApp) async {
+    final apk = await NearSource(settingsProvider).resolve(currentApp);
+    return currentApp.copyWith(
+      latestVersion: apk.version,
+      apkUrls: apk.apkUrls,
+      otherAssetUrls: const [],
+      preferredApkIndex: currentApp.preferredApkIndex < apk.apkUrls.length
+          ? currentApp.preferredApkIndex
+          : (apk.apkUrls.isNotEmpty ? 0 : currentApp.preferredApkIndex),
+      releaseDate: apk.releaseDate,
+      changeLog: apk.changeLog,
+      releaseUrl: apk.releaseUrl,
+      lastUpdateCheck: DateTime.now(),
+    );
   }
 
   /// Fetches [appId] with a short retry for transient TLS handshake failures.

@@ -281,6 +281,7 @@ String localizeErrorCode(String code, Map<String, dynamic>? data) {
       args: [data?['sourceName'] ?? ''],
     ),
     'NO_APK' => tr('noAPKFound'),
+    'APP_NOT_IN_REPO' => tr('appWithIdOrNameNotFound'),
     'MIN_UPDATE_AGE' => tr(
       'releaseTooYoungForMinAge',
       args: ['${data?['minAgeDays'] ?? ''}'],

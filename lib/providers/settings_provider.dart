@@ -467,6 +467,40 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Base URL of the LAN F-Droid repository — the near source that answers
+  /// update checks and downloads by default. Normalized without a trailing
+  /// slash so `'$baseUrl/?appId=...'` and prefix comparisons stay valid.
+  String get lanRepoUrl {
+    final stored = getSettingString('lanRepoUrl')?.trim();
+    final url = (stored == null || stored.isEmpty)
+        ? defaultLanRepoUrl
+        : stored;
+    return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+  }
+
+  set lanRepoUrl(String url) {
+    var trimmed = url.trim();
+    if (trimmed.endsWith('/')) trimmed = trimmed.substring(0, trimmed.length - 1);
+    if (trimmed.isEmpty || trimmed == defaultLanRepoUrl) {
+      prefs?.remove('lanRepoUrl');
+    } else {
+      prefs?.setString('lanRepoUrl', trimmed);
+    }
+    notifyListeners();
+  }
+
+  /// Manual opt-in for the remote (GitHub) source family. Off by default:
+  /// apps resolve through [lanRepoUrl] unless they declare the remote source
+  /// themselves (`useRemoteSource` in the app's settings).
+  bool get githubSourceEnabled {
+    return _getBool('githubSourceEnabled') ?? false;
+  }
+
+  set githubSourceEnabled(bool enabled) {
+    prefs?.setBool('githubSourceEnabled', enabled);
+    notifyListeners();
+  }
+
   /// App-repo URLs the user removed from a grouped list. The manual sync never
   /// re-adds these, which is what makes a deletion stick (earlier builds merged
   /// `list.json` on every launch and resurrected every removed app).

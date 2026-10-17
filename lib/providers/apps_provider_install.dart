@@ -24,6 +24,7 @@ import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/services/near_source.dart';
 import 'package:obtainium/utils/signing_cert_utils.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -178,16 +179,22 @@ extension AppsProviderInstall on AppsProvider {
         app.apkUrls[app.preferredApkIndex].value,
       );
       final List<String> downloadUrls = [];
+      final near = NearSource(settingsProvider);
       for (final apkUrlValue in apkUrlValues) {
+        // A repository (near) URL is fetched exactly as the index gave it: the
+        // declared source's proxy prefix and the download mirrors would both
+        // rewrite it into a URL the LAN server never published.
         downloadUrls.add(
-          await source.assetUrlPrefetchModifier(
-            await source.generalReqPrefetchModifier(
-              apkUrlValue,
-              additionalSettingsPlusSourceConfig,
-            ),
-            app.url,
-            additionalSettingsPlusSourceConfig,
-          ),
+          near.isNearUrl(apkUrlValue)
+              ? apkUrlValue
+              : await source.assetUrlPrefetchModifier(
+                  await source.generalReqPrefetchModifier(
+                    apkUrlValue,
+                    additionalSettingsPlusSourceConfig,
+                  ),
+                  app.url,
+                  additionalSettingsPlusSourceConfig,
+                ),
         );
       }
       final String downloadUrl = downloadUrls.first;
@@ -245,11 +252,15 @@ extension AppsProviderInstall on AppsProvider {
         prevProg = prog;
       }
 
-      final headers = await source.getRequestHeaders(
-        app.additionalSettings,
-        downloadUrl,
-        forAPKDownload: true,
-      );
+      final headers = near.isNearUrl(downloadUrl)
+          ? null
+          // A repository URL is on the LAN, so the source's auth headers (e.g. a
+          // GitHub token) must not be attached to it.
+          : await source.getRequestHeaders(
+              app.additionalSettings,
+              downloadUrl,
+              forAPKDownload: true,
+            );
       additionalSettingsPlusSourceConfig['url'] = downloadUrl;
       var downloadedFile = await downloadFileWithRetry(
         fileNameNoExt,
@@ -306,11 +317,13 @@ extension AppsProviderInstall on AppsProvider {
           // Download the remaining split URLs into the same directory.
           for (var i = 1; i < downloadUrls.length; i++) {
             final splitUrl = downloadUrls[i];
-            final splitHeaders = await source.getRequestHeaders(
-              app.additionalSettings,
-              splitUrl,
-              forAPKDownload: true,
-            );
+            final splitHeaders = near.isNearUrl(splitUrl)
+                ? null
+                : await source.getRequestHeaders(
+                    app.additionalSettings,
+                    splitUrl,
+                    forAPKDownload: true,
+                  );
             additionalSettingsPlusSourceConfig['url'] = splitUrl;
             completedDownloads = i;
             final splitFile = await downloadFileWithRetry(
@@ -1297,14 +1310,16 @@ extension AppsProviderInstall on AppsProvider {
               );
           fileUrl = MapEntry(
             tempFileUrl.key,
-            await s.assetUrlPrefetchModifier(
-              await s.generalReqPrefetchModifier(
-                tempFileUrl.value,
-                additionalSettingsPlusSourceConfig,
-              ),
-              apps[id]!.app.url,
-              additionalSettingsPlusSourceConfig,
-            ),
+            NearSource(settingsProvider).isNearUrl(tempFileUrl.value)
+                ? tempFileUrl.value
+                : await s.assetUrlPrefetchModifier(
+                    await s.generalReqPrefetchModifier(
+                      tempFileUrl.value,
+                      additionalSettingsPlusSourceConfig,
+                    ),
+                    apps[id]!.app.url,
+                    additionalSettingsPlusSourceConfig,
+                  ),
           );
         }
       }

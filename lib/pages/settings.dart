@@ -18,6 +18,7 @@ import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/external_install_bridge.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/services/near_source.dart';
 import 'package:obtainium/theme.dart';
 import 'package:obtainium/utils/locale_utils.dart';
 import 'package:obtainium/utils/native_features.dart';
@@ -321,6 +322,16 @@ class _SettingsPageState extends State<SettingsPage> {
                 context,
                 title: '应用列表',
                 childBuilder: (_) => const _GroupedListSection(),
+              ),
+            ),
+            _settingsRow(
+              context,
+              icon: Icons.lan_outlined,
+              title: '应用来源',
+              onTap: () => _pushPage(
+                context,
+                title: '应用来源',
+                childBuilder: (_) => const _AppSourceSection(),
               ),
             ),
             if (hasSourceSpecificSettings)
@@ -1326,6 +1337,126 @@ class _GroupedListSectionState extends State<_GroupedListSection> {
               ],
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// Settings → 应用来源: which repository answers update checks and downloads.
+///
+/// ObtainAPK uses the near (LAN) repository by default; the remote sources are
+/// only consulted when enabled globally here or declared per app through
+/// `useRemoteSource`.
+class _AppSourceSection extends StatefulWidget {
+  const _AppSourceSection();
+
+  @override
+  State<_AppSourceSection> createState() => _AppSourceSectionState();
+}
+
+class _AppSourceSectionState extends State<_AppSourceSection> {
+  bool _probing = false;
+  String? _probeResult;
+
+  Future<void> _probe(SettingsProvider settingsProvider) async {
+    if (_probing) return;
+    setState(() => _probing = true);
+    final String result;
+    try {
+      final apps = await NearSource(settingsProvider).probe();
+      result = '仓库可达，共 $apps 个应用';
+    } catch (e) {
+      result = '连不上：$e';
+    }
+    if (!mounted) return;
+    setState(() {
+      _probeResult = result;
+      _probing = false;
+    });
+  }
+
+  String _statusLine(SettingsProvider settingsProvider) {
+    if (settingsProvider.githubSourceEnabled) {
+      return '现在所有应用按各自声明的网站源检查更新。';
+    }
+    return '现在所有应用走近端仓库：${NearSource(settingsProvider).baseUrl}\n'
+        '仓库里没有某个应用时会报错，不会自动回落到 GitHub；'
+        '要单个应用走网站，就在它的设置里勾选「改用远端源」。';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settingsProvider = context.watch<SettingsProvider>();
+    final captionStyle = Theme.of(context).textTheme.labelSmall;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 3,
+      children: [
+        CardTile(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Text(
+            '更新检查和 APK 下载默认全部走近端局域网仓库（lanpub serve 起的那个），'
+            'GitHub 等远端源要额外声明才会用到。',
+            style: captionStyle,
+          ),
+        ),
+        ToggleTile(
+          label: '使用远端（GitHub）源',
+          value: settingsProvider.githubSourceEnabled,
+          onChanged: (value) => settingsProvider.githubSourceEnabled = value,
+          helpWidgets: [
+            Text('打开后所有应用回到各自声明的网站源，不再查局域网仓库。'),
+          ],
+        ),
+        ConnectedCard(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: GeneratedForm(
+            tileMode: true,
+            items: [
+              [
+                GeneratedFormTextField(
+                  'lanRepoUrl',
+                  label: '局域网仓库地址',
+                  required: false,
+                  hint: defaultLanRepoUrl,
+                )..value = settingsProvider.lanRepoUrl,
+              ],
+            ],
+            onValueChanges: (values, valid, isBuilding) {
+              if (valid && !isBuilding) {
+                settingsProvider.lanRepoUrl =
+                    (values['lanRepoUrl'] as String?) ?? '';
+              }
+            },
+          ),
+        ),
+        CardTile(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: _probing
+                  ? null
+                  : () => _probe(settingsProvider),
+              child: _probing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('测试能否连上这个仓库'),
+            ),
+          ),
+        ),
+        CardTile(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Text(
+            _probeResult == null
+                ? _statusLine(settingsProvider)
+                : '${_statusLine(settingsProvider)}\n$_probeResult',
+            style: captionStyle,
+          ),
+        ),
       ],
     );
   }
