@@ -237,8 +237,30 @@ class FDroidRepo extends AppSource {
   Future<int> countPublishedApps(
     String baseUrl,
     Map<String, dynamic> additionalSettings,
-  ) async =>
-      (await _fetchIndex(baseUrl, additionalSettings)).entries.length;
+  ) async => (await _fetchIndex(baseUrl, additionalSettings)).entries.length;
+
+  /// Returns apps whose display names exactly match any of [names], ignoring
+  /// case and repeated whitespace. Exact matching avoids choosing a wrong APK
+  /// when two unrelated apps have similar names.
+  Future<List<MapEntry<String, String>>> findAppsByExactName(
+    String baseUrl,
+    Iterable<String> names,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    String normalize(String value) =>
+        value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+    final wanted = names
+        .map(normalize)
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    if (wanted.isEmpty) return const [];
+    final index = await _fetchIndex(baseUrl, additionalSettings);
+    return index.entries
+        .where((entry) => wanted.contains(normalize(entry.name)))
+        .map((entry) => MapEntry(entry.id, entry.name))
+        .toList();
+  }
 
   Future<_FdroidIndex?> _tryFetchIndexV2(
     String url,

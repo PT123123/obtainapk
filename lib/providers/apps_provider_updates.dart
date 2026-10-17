@@ -55,11 +55,16 @@ extension AppsProviderUpdates on AppsProvider {
   /// per-app settings stay as they are, so a near build doesn't rewrite the
   /// app's identity.
   Future<App> fetchNearUpdate(App currentApp) async {
-    final apk = await NearSource(settingsProvider).resolve(currentApp);
+    final resolution = await NearSource(settingsProvider).resolve(currentApp);
+    final apk = resolution.apk;
     return currentApp.copyWith(
       latestVersion: apk.version,
       apkUrls: apk.apkUrls,
       otherAssetUrls: const [],
+      additionalSettings: <String, dynamic>{
+        ...currentApp.additionalSettings,
+        'nearSourcePackageId': resolution.packageId,
+      },
       preferredApkIndex: currentApp.preferredApkIndex < apk.apkUrls.length
           ? currentApp.preferredApkIndex
           : (apk.apkUrls.isNotEmpty ? 0 : currentApp.preferredApkIndex),

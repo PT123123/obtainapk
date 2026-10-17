@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/providers/apps_provider.dart';
+import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/utils/nav_helper.dart';
 import 'package:provider/provider.dart';
 
@@ -55,10 +56,12 @@ class ObtainAppDrawer extends StatelessWidget {
                     tracked == 0
                         ? '在主界面添加要跟踪的应用'
                         : '已跟踪 $tracked 个应用 · $installed 个已安装',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                   ),
+                  const SizedBox(height: 4),
+                  const _AppVersionLabel(),
                 ],
               ),
             ),
@@ -91,6 +94,32 @@ class ObtainAppDrawer extends StatelessWidget {
   }
 }
 
+class _AppVersionLabel extends StatefulWidget {
+  const _AppVersionLabel();
+
+  @override
+  State<_AppVersionLabel> createState() => _AppVersionLabelState();
+}
+
+class _AppVersionLabelState extends State<_AppVersionLabel> {
+  late final Future<String?> _version = getInstalledInfo(obtainiumId).then(
+    (info) => info?.versionName == null
+        ? null
+        : '${info!.versionName} (${info.longVersionCode ?? info.versionCode ?? '?'})',
+  );
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<String?>(
+    future: _version,
+    builder: (context, snapshot) => Text(
+      '版本 ${snapshot.data ?? '未知'}',
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    ),
+  );
+}
+
 class _NavTile extends StatelessWidget {
   const _NavTile({
     required this.icon,
@@ -115,11 +144,7 @@ class _NavTile extends StatelessWidget {
       title: Text(label),
       subtitle: subtitle == null
           ? null
-          : Text(
-              subtitle!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+          : Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis),
       selected: active,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       onTap: onTap,
