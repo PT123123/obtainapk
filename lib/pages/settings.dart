@@ -37,6 +37,11 @@ class _SettingsPageState extends State<SettingsPage> {
   int? androidSdkInt;
   int _installerCheckSeq = 0;
   bool _isRunningBgCheck = false;
+  late final Future<String?> _appVersion = getInstalledInfo(obtainiumId).then(
+    (info) => info?.versionName == null
+        ? null
+        : '${info!.versionName} (${info.longVersionCode ?? info.versionCode ?? '?'})',
+  );
 
   @override
   void initState() {
@@ -282,6 +287,15 @@ class _SettingsPageState extends State<SettingsPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: 20,
       children: [
+        CardTile(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: ToggleTile(
+            label: '打开 GitHub 源',
+            value: settingsProvider.githubSourceEnabled,
+            onChanged: (value) => settingsProvider.githubSourceEnabled = value,
+            helpWidgets: [Text('打开后所有应用使用各自声明的远端网站源；关闭时默认走局域网仓库。')],
+          ),
+        ),
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           spacing: 3,
@@ -397,6 +411,18 @@ class _SettingsPageState extends State<SettingsPage> {
               },
             ),
           ]),
+        ),
+        FutureBuilder<String?>(
+          future: _appVersion,
+          builder: (context, snapshot) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Center(
+              child: Text(
+                '版本 ${snapshot.data ?? '未知'}',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -1361,7 +1387,7 @@ class _AppSourceSectionState extends State<_AppSourceSection> {
   Future<void> _probe(SettingsProvider settingsProvider) async {
     if (_probing) return;
     setState(() => _probing = true);
-    final String result;
+    late final String result;
     try {
       final apps = await NearSource(settingsProvider).probe();
       result = '仓库可达，共 $apps 个应用';
@@ -1400,14 +1426,6 @@ class _AppSourceSectionState extends State<_AppSourceSection> {
             style: captionStyle,
           ),
         ),
-        ToggleTile(
-          label: '使用远端（GitHub）源',
-          value: settingsProvider.githubSourceEnabled,
-          onChanged: (value) => settingsProvider.githubSourceEnabled = value,
-          helpWidgets: [
-            Text('打开后所有应用回到各自声明的网站源，不再查局域网仓库。'),
-          ],
-        ),
         ConnectedCard(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: GeneratedForm(
@@ -1435,9 +1453,7 @@ class _AppSourceSectionState extends State<_AppSourceSection> {
           child: SizedBox(
             width: double.infinity,
             child: FilledButton.tonal(
-              onPressed: _probing
-                  ? null
-                  : () => _probe(settingsProvider),
+              onPressed: _probing ? null : () => _probe(settingsProvider),
               child: _probing
                   ? const SizedBox(
                       width: 20,
