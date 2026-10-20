@@ -24,15 +24,22 @@
 # so all logic for one recipe must be on a SINGLE line (separated by ;).
 set shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
-# Absolute paths — change these when moving machines
-FLUTTER_BAT := "C:\\Users\\ted\\flutter\\bin\\flutter.bat"
-ANDROID_SDK  := "C:\\Users\\ted\\AppData\\Local\\Android\\Sdk"
+# Tool locations. Resolved from the environment so the file carries no
+# machine-specific path — this repository is public, and a hardcoded user
+# name in it would leak. Override with FLUTTER_BAT / ANDROID_HOME when your
+# setup differs from the defaults.
+FLUTTER_BAT := env_var_or_default('FLUTTER_BAT', env_var_or_default('USERPROFILE', '') + "\\flutter\\bin\\flutter.bat")
+ANDROID_SDK := env_var_or_default('ANDROID_HOME', env_var_or_default('LOCALAPPDATA', '') + "\\Android\\Sdk")
 PUBSPEC      := "pubspec.yaml"
 APK_OUT      := "build\\app\\outputs\\flutter-apk\\app-normal-release.apk"
 
 # ---- Dependency management ----
 pub-get:
 	$env:ANDROID_HOME='{{ANDROID_SDK}}'; $env:ANDROID_SDK_ROOT='{{ANDROID_SDK}}'; & '{{FLUTTER_BAT}}' pub get
+
+# Bump, build and publish to the configured LAN repository.
+publish:
+	& "{{justfile_directory()}}/tool/publish-lan.ps1"; if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
 # ---- Version bump ----
 # Reads `version: x.y.z+nnnn` from pubspec.yaml, bumps patch (z+1) and build
