@@ -652,11 +652,15 @@ class _AppPageState extends State<AppPage> {
                 : !trackOnly
                 ? tr('update')
                 : tr('markUpdated'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           if (_probedDownloadSize != null)
             Builder(
               builder: (context) => Text(
                 formatBytes(_probedDownloadSize!),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: DefaultTextStyle.of(context).style.color,
                 ),
@@ -1361,29 +1365,56 @@ class _AppPageState extends State<AppPage> {
         Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Row(
+            // The secondary icons stay on the left and the action buttons on
+            // the right, but the button group can shrink now. The row used to
+            // be wider than the screen on a phone (and with a large system
+            // font), so the primary button was cut off by the screen edge.
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              ..._getSecondaryActions(
-                context,
-                app,
-                source,
-                appsProvider,
-                settingsProvider,
-                showAppWebpageFinal,
-                isVersionDetectionStandard,
-                trackOnly,
-              ),
-              const Spacer(),
-              if (app?.app.installedVersion != null)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        packageManager.openApp(app!.installedPackageName),
-                    icon: const Icon(Icons.launch),
-                    label: const Text('Open'),
-                  ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: _getSecondaryActions(
+                  context,
+                  app,
+                  source,
+                  appsProvider,
+                  settingsProvider,
+                  showAppWebpageFinal,
+                  isVersionDetectionStandard,
+                  trackOnly,
                 ),
-              _getPrimaryButton(context, app, areDownloadsRunning),
+              ),
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (app?.app.installedVersion != null)
+                      Flexible(
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: OutlinedButton.icon(
+                            onPressed: () => packageManager.openApp(
+                              app!.installedPackageName,
+                            ),
+                            icon: const Icon(Icons.launch),
+                            label: const Text(
+                              'Open',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ),
+                    Flexible(
+                      child: _getPrimaryButton(
+                        context,
+                        app,
+                        areDownloadsRunning,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
