@@ -205,6 +205,58 @@ class _AppIconWidgetState extends State<AppIconWidget> {
   }
 }
 
+/// Geometry of the app-list grid cards.
+///
+/// The card stacks the icon row, the app name, the author line and the
+/// version/action row. Its height is derived from that content instead of
+/// from an aspect ratio: a fixed ratio silently clipped the trailing
+/// buttons (version label + download button) as soon as the grid became
+/// narrower than two columns, or the name wrapped onto a second line.
+const double kAppGridCardMinWidth = 168;
+const double kAppGridCardSpacing = 8;
+
+/// How many grid columns fit into [availableWidth].
+///
+/// The count follows the available width instead of being fixed, but a column
+/// is never narrower than [kAppGridCardMinWidth]. Below that the card cannot
+/// hold its icon row and its trailing buttons side by side, and the card
+/// clips them (the buttons end up half hidden).
+int appGridColumnCount(double availableWidth) {
+  final fit =
+      ((availableWidth + kAppGridCardSpacing) /
+              (kAppGridCardMinWidth + kAppGridCardSpacing))
+          .floor();
+  return fit.clamp(2, 6);
+}
+
+/// Height a grid card needs so that nothing inside it is clipped.
+///
+/// The card stacks the 44dp icon row, a two-line title, the author line and
+/// the version/action row, wrapped in 10dp padding. Only the text parts
+/// grow with the system font scale, so they are scaled separately; the
+/// numbers are calibrated against the real card (see
+/// `test/app_list_grid_layout_test.dart`).
+double appGridCardHeight(BuildContext context) {
+  final scale = MediaQuery.textScalerOf(context).scale(1.0);
+  const fixed = 110.0; // padding + icon row + gaps + action row
+  const text = 80.0; // two title lines + author line at scale 1
+  return fixed + text * math.max(scale, 1.0);
+}
+
+/// Grid delegate shared by the app list and its grouped sections, so both
+/// keep the same card size and therefore the same button layout.
+SliverGridDelegateWithFixedCrossAxisCount appGridDelegate(
+  BuildContext context,
+  double availableWidth,
+) {
+  return SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: appGridColumnCount(availableWidth),
+    crossAxisSpacing: kAppGridCardSpacing,
+    mainAxisSpacing: kAppGridCardSpacing,
+    mainAxisExtent: appGridCardHeight(context),
+  );
+}
+
 class AppListTile extends StatelessWidget {
   final AppInMemory appInMemory;
   final SettingsProvider settingsProvider;
@@ -721,12 +773,20 @@ class AppListTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 6),
-              Text(
-                appInMemory.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: _app.pinned ? FontWeight.bold : FontWeight.normal,
+              // Flexible on purpose: when the card is shorter than its
+              // content needs (long name, large system font) the title gives
+              // up space instead of pushing the action row out of the card,
+              // where the card's clip would hide the buttons.
+              Flexible(
+                child: Text(
+                  appInMemory.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: _app.pinned
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                  ),
                 ),
               ),
               const SizedBox(height: 2),
@@ -929,14 +989,16 @@ class AppListGroupSection extends StatelessWidget {
           if (grid && tiles.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 3),
-              child: GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: 0.9,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                children: tiles,
+              child: LayoutBuilder(
+                builder: (context, constraints) => GridView(
+                  gridDelegate: appGridDelegate(
+                    context,
+                    constraints.maxWidth,
+                  ),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: tiles,
+                ),
               ),
             )
           else

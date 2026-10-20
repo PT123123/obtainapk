@@ -66,7 +66,7 @@ class AppsPageState extends State<AppsPage> {
   bool _collapseStateInitDone = false;
   bool _selectionPruneScheduled = false;
 
-  /// Currently selected app-list group from the remote grouped list (list.json).
+  /// Currently selected group supplied by the repository catalog.
   /// `null` means "show all apps" (no group filter). Mirrors the persisted
   /// [SettingsProvider.selectedAppGroup].
   String? _selectedGroup;
@@ -252,12 +252,44 @@ class AppsPageState extends State<AppsPage> {
     return (grouped, listedGroups);
   }
 
-  Future<List<App>> refresh() {
+  Future<List<App>> refresh() async {
     settingsProvider.lightImpact();
     setState(() {});
     final ctx = context;
+    try {
+      await appsProvider.syncGroupedList();
+    } catch (e) {
+      if (ctx.mounted) showError(e, ctx);
+      if (mounted) setState(() {});
+      // Don't check the stale list if neither the live repository nor its
+      // cached catalog could be loaded.
+      return <App>[];
+    }
+
+    final selectedGroup = _selectedGroup;
+    final List<String>? selectedGroupIds;
+    if (selectedGroup == null) {
+      selectedGroupIds = null;
+    } else {
+      final eligibleIds = appsProvider.getAppsSortedByUpdateCheckTime(
+        forceAll: true,
+        onlyCheckInstalledOrTrackOnlyApps:
+            settingsProvider.onlyCheckInstalledOrTrackOnlyApps,
+      );
+      selectedGroupIds = eligibleIds
+          .where(
+            (id) =>
+                appsProvider.apps[id]?.app.groups.contains(selectedGroup) ??
+                false,
+          )
+          .toList();
+    }
+    if (selectedGroupIds != null && selectedGroupIds.isEmpty) {
+      if (mounted) setState(() {});
+      return <App>[];
+    }
     return appsProvider
-        .checkUpdates(forceAll: true)
+        .checkUpdates(specificIds: selectedGroupIds, forceAll: true)
         .catchError((e) {
           if (ctx.mounted) {
             showError(e is CheckUpdatesException ? e.errors : e, ctx);
@@ -1002,23 +1034,27 @@ class AppsPageState extends State<AppsPage> {
           )
         : SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: 0.9,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => _appGridCard(
-                  index,
+            sliver: SliverLayoutBuilder(
+              builder: (context, constraints) => SliverGrid(
+                // The column count follows the available width: forcing three
+                // columns on a phone left each card ~107dp wide, which is too
+                // narrow for the icon row plus the trailing buttons, so the
+                // card clipped them.
+                gridDelegate: appGridDelegate(
                   context,
-                  listedApps,
-                  settingsProvider,
-                  appsProvider,
+                  constraints.crossAxisExtent,
                 ),
-                childCount: listedApps.length,
-                addAutomaticKeepAlives: false,
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => _appGridCard(
+                    index,
+                    context,
+                    listedApps,
+                    settingsProvider,
+                    appsProvider,
+                  ),
+                  childCount: listedApps.length,
+                  addAutomaticKeepAlives: false,
+                ),
               ),
             ),
           );
@@ -1079,7 +1115,7 @@ class AppsPageState extends State<AppsPage> {
 
   /// A horizontal, clickable group switcher shown above the app list. Renders a
   /// "全部" (all) chip plus one chip per group defined in the remote grouped
-  /// list (list.json). Tapping a chip filters the list by that group's tag.
+  /// catalog. Tapping a chip filters the list by that group's tag.
   Widget _getGroupSwitcherSliver(BuildContext context) {
     final groups = settingsProvider.groupedListGroups;
     if (groups.isEmpty) {
@@ -1280,6 +1316,10 @@ class AppsPageState extends State<AppsPage> {
       List<AppInMemory>.from(apps),
       existingUpdates,
     );
+    listedApps = listedApps.where((entry) {
+      final isLan = entry.app.additionalSettings['repositoryManaged'] == true;
+      return settingsProvider.selectedAppLibrary == 'lan' ? isLan : !isLan;
+    }).toList();
     // Group switcher (分组切换): narrow the list to the selected group's tag.
     // Group tags live in [App.groups] (not categories) so the category editor
     // can never strip them.
