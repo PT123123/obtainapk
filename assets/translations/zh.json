@@ -469,6 +469,7 @@
     "trySelectingSuggestedVersionCode": "尝试选择推荐版本的 APK 文件",
     "uname": "用户名",
     "unexpectedError": "意外错误",
+    "errorDetails": "查看详情",
     "useGlobalDefault": "使用全局默认值",
     "unexpectedStoreApiResponse": "商店 API 返回了意外的响应",
     "uninstallFromDevice": "从设备中卸载",

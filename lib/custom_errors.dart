@@ -47,6 +47,7 @@ class ObtainiumError {
       code == 'UNKNOWN' ||
           code == 'UNEXPECTED' ||
           code == 'CHECK_UPDATES_FAILED' ||
+          code == 'NEAR_SOURCE_APP_NOT_FOUND' ||
           code == 'HTTP_ERROR'
       ? _message
       : localizeErrorCode(code, data);
@@ -166,10 +167,7 @@ class InstallError extends ObtainiumError {
   InstallError(int code)
     : super.withCode(
         'INSTALL_FAILED',
-        data: {
-          'errorCode': code,
-          'message': installErrorCodeToMessage(code),
-        },
+        data: {'errorCode': code, 'message': installErrorCodeToMessage(code)},
       );
 }
 
@@ -240,10 +238,8 @@ class MultiAppMultiError extends ObtainiumError {
     }
     idsByErrorString.removeWhere((k, v) => v.isEmpty);
     var tempIds = idsByErrorString.remove(string);
-    if (tempIds == null) {
-      tempIds = [];
-      idsByErrorString[string] = tempIds;
-    }
+    tempIds ??= [];
+    idsByErrorString[string] = tempIds;
     tempIds.add(appId);
     if (appName != null) {
       appIdNames[appId] = appName;

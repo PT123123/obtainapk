@@ -3,6 +3,7 @@ import 'dart:ui' show Locale, PlatformDispatcher;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:obtainium/components/ui_widgets.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/apps_provider.dart';
@@ -53,13 +54,6 @@ List<MapEntry<Locale, String>> supportedLocales = const [
   MapEntry(Locale('gl'), 'Galego'),
 ];
 const fallbackLocale = Locale('en');
-
-/// Default URL of the grouped app list (list.json), used by the manual sync in
-/// Settings. ObtainAPK merges its groups into the user's app list and tags each
-/// app with its group id. Overridden by the `groupedListUrl` shared-prefs key
-/// (SettingsProvider.groupedListUrl) if a fork needs a different source.
-const String defaultGroupedListUrl =
-    'https://raw.githubusercontent.com/PT123123/obtainapk/main/list.json';
 
 /// Empty means discover the LAN F-Droid repository advertised by `lanpub serve`
 /// over DNS-SD/mDNS. A manually configured URL still overrides discovery.
@@ -137,24 +131,41 @@ void main() async {
   await EasyLocalization.ensureInitialized();
 
   ErrorWidget.builder = (details) {
-    return const Directionality(
+    final errorText = StringBuffer(details.exceptionAsString());
+    final stack = details.stack;
+    if (stack != null) {
+      errorText
+        ..write('\n\n')
+        ..write(stack);
+    }
+    return Directionality(
       textDirection: TextDirection.ltr,
-      child: Scaffold(
-        body: Center(
-          child: Padding(
-            padding: EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.error_outline, size: 64),
-                SizedBox(height: 16),
-                Text(_unexpectedErrorText),
-                SizedBox(height: 16),
-                FilledButton(
-                  onPressed: SystemNavigator.pop,
-                  child: Text(_closeText),
+      child: Builder(
+        builder: (context) => Scaffold(
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, size: 64),
+                    const SizedBox(height: 16),
+                    const Text(_unexpectedErrorText),
+                    const SizedBox(height: 16),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: SelectableText(errorText.toString()),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: SystemNavigator.pop,
+                      child: const Text(_closeText),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -267,52 +278,24 @@ class _ObtainiumState extends State<Obtainium> {
       if (!settings.isTV) {
         unawaited(Permission.notification.request());
       }
-      if (!isFdroidBuild) {
-        getInstalledInfo(obtainiumId)
-            .then((value) {
-              if (value?.versionName != null) {
-                unawaited(
-                  apps.saveApps([
-                    App(
-                      id: obtainiumId,
-                      url: obtainiumUrl,
-                      author: 'PT123123',
-                      name: 'ObtainAPK',
-                      installedVersion: value!.versionName,
-                      latestVersion: value.versionName!,
-                      apkUrls: [],
-                      preferredApkIndex: 0,
-                      additionalSettings: {
-                        'versionDetection': true,
-                        'apkFilterRegEx': 'fdroid',
-                        'invertAPKFilter': true,
-                      },
-                      lastUpdateCheck: null,
-                      pinned: false,
-                    ),
-                  ], onlyIfExists: false),
-                );
-              }
-            })
-            .catchError((err, stack) {
-              AppLogger.error(
-                err,
-                stackTrace: stack,
-                message: 'Failed to add ObtainAPK on first run',
-              );
-            });
-      }
     }
-    // One-time import of the bundled marketplace defaults
-    // (marketplace/apps.json). Flag-based so it runs for fresh installs AND
-    // upgrades of existing installs, but never re-adds apps the user
-    // deleted afterwards.
-    // NOTE: The grouped list (list.json) is no longer pulled at startup - doing
-    // that re-added every app the user had deleted. It is synced on demand from
-    // Settings → 应用列表 via AppsProvider.syncGroupedList().
-    if (settings.prefs?.getBool('marketplaceDefaultsImported') != true) {
-      unawaited(settings.prefs?.setBool('marketplaceDefaultsImported', true));
-    }
+    // The repository is the only catalog authority. A successful snapshot is
+    // cached; package-based tombstones keep deleted entries deleted on startup.
+    unawaited(
+      apps
+          .syncGroupedList()
+          .then((result) {
+            AppLogger.info('Repository catalog loaded from ${result.source}');
+          })
+          .catchError((Object error, StackTrace stack) {
+            AppLogger.error(
+              error,
+              stackTrace: stack,
+              message: 'Repository catalog unavailable',
+            );
+            if (context.mounted) showError(error, context);
+          }),
+    );
     final currentLang = context.locale.languageCode;
     final deviceLang = context.deviceLocale.languageCode;
     if (!supportedLocaleSet.contains(context.locale) ||

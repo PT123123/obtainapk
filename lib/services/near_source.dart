@@ -15,8 +15,8 @@ class NearSourceResolution {
 
 /// The LAN F-Droid repository (near source) published by `lanpub serve`.
 ///
-/// ObtainAPK tries it first for every app. When the repository does not publish
-/// an app, update checks continue through that app's original source.
+/// When the global remote-source switch is off, every app uses this repository.
+/// Missing apps and repository failures never fall back to the original source.
 class NearSource {
   static const _repoRequestTimeout = Duration(seconds: 2);
   static const _repoRequestSettings = <String, dynamic>{
@@ -82,15 +82,9 @@ class NearSource {
     throw ObtainiumError('未发现局域网仓库，请确认电脑上的 lanpub serve 正在运行');
   }
 
-  /// True when the near source should answer for [app] — i.e. it hasn't been
-  /// declared remote and a repository address is configured.
-  bool isUsedFor(App app) =>
-      !_settingsProvider.githubSourceEnabled &&
-      !isDeclaredRemote(app) &&
-      (baseUrl.isEmpty || Uri.tryParse(baseUrl)?.hasAuthority == true);
-
-  bool isDeclaredRemote(App app) =>
-      app.additionalSettings['useRemoteSource'] == true;
+  /// The global switch is authoritative, including for apps with a legacy
+  /// `useRemoteSource` setting and when the configured LAN URL is invalid.
+  bool isUsedFor(App app) => !_settingsProvider.githubSourceEnabled;
 
   /// True when [url] lives inside the repository, so it must not be rewritten
   /// by the app's declared (GitHub) source prefix or by download mirrors.
@@ -108,13 +102,13 @@ class NearSource {
       .countPublishedApps(await resolveBaseUrl(), _repoRequestSettings)
       .timeout(_repoRequestTimeout);
 
-  /// The package name used to look [app] up in the index: the name learned from
-  /// the device, a saved LAN match, a real tracked ID, or an explicit source ID.
+  /// Known package IDs take precedence over cached name matches. Placeholders
+  /// use the package learned from the device, LAN match, or explicit source ID.
   static String? packageOf(App app) {
     final candidates = <String?>[
+      isTempId(app) ? null : app.id,
       app.cachedInstalledPackageName,
       app.additionalSettings['nearSourcePackageId'] as String?,
-      isTempId(app) ? null : app.id,
       app.additionalSettings['appIdOrName'] as String?,
     ];
     for (final candidate in candidates) {
@@ -143,21 +137,24 @@ class NearSource {
       return NearSourceResolution(packageId: package, apk: apk);
     } on ObtainiumError catch (e) {
       if (e.code != 'APP_NOT_IN_REPO') rethrow;
-      final matches = await repo.findAppsByExactName(
-        repoBaseUrl,
-        names,
-        _repoRequestSettings,
-      );
-      if (matches.length == 1 && matches.single.key != package) {
-        package = matches.single.key;
-        final apk = await _getPackageDetails(repo, package, repoBaseUrl);
-        return NearSourceResolution(packageId: package, apk: apk);
+      // A known package is an identity, not a search hint. A similarly named
+      // fork must be added separately instead of offered as its update.
+      if (isTempId(app) && app.cachedInstalledPackageName == null) {
+        final matches = await repo.findAppsByExactName(
+          repoBaseUrl,
+          names,
+          _repoRequestSettings,
+        );
+        if (matches.length == 1 && matches.single.key != package) {
+          package = matches.single.key;
+          final apk = await _getPackageDetails(repo, package, repoBaseUrl);
+          return NearSourceResolution(packageId: package, apk: apk);
+        }
+        if (matches.length > 1) throw _ambiguousNameError(app, matches);
       }
-      if (matches.length > 1) throw _ambiguousNameError(app, matches);
       throw ObtainiumError(
         '近端仓库 $repoBaseUrl 里没有 $package。\n'
-        '要么用 lanpub add 把这个包投进仓库，要么在这个应用的设置里勾选'
-        '「改用远端源」。',
+        '请用 lanpub add 把这个包投进仓库。',
         code: 'NEAR_SOURCE_APP_NOT_FOUND',
       );
     }

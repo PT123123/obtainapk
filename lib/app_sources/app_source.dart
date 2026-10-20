@@ -209,15 +209,6 @@ abstract class AppSource {
   List<List<GeneratedFormItem>> get _commonAppSettingFormItems => [
     [GeneratedFormSwitch('trackOnly', label: tr('trackOnly'))],
     [
-      // ObtainAPK checks updates against the LAN repository by default, so this
-      // escape hatch belongs to every source, not only GitHub.
-      GeneratedFormSwitch(
-        'useRemoteSource',
-        label: '改用远端源（不走局域网仓库）',
-        value: false,
-      ),
-    ],
-    [
       GeneratedFormTextField(
         'versionExtractionRegEx',
         label: tr('trimVersionString'),

@@ -98,7 +98,7 @@ class App {
   final bool pinned;
   final List<String> categories;
 
-  /// Group tags owned by the remote grouped list (list.json), e.g. `mine`.
+  /// Group tags supplied by repository metadata.
   ///
   /// Deliberately kept apart from [categories]: categories are user-managed and
   /// the category editor / [CategorySelector] prune (and persist the pruning of)

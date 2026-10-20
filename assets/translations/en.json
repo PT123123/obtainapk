@@ -466,6 +466,7 @@
     "trySelectingSuggestedVersionCode": "Try selecting suggested versionCode APK",
     "uname": "Username",
     "unexpectedError": "Unexpected error",
+    "errorDetails": "Details",
     "useGlobalDefault": "Use global default",
     "unexpectedStoreApiResponse": "Unexpected store API response",
     "uninstallFromDevice": "Uninstall from device",

@@ -163,6 +163,12 @@ extension AppsProviderInstall on AppsProvider {
         apps[app.id]!.downloadTotalBytes = null;
         notify();
       }
+      // Saved asset URLs can belong to the previously selected source. Resolve
+      // LAN metadata here too, including direct downloads that skip install UI.
+      final near = NearSource(settingsProvider);
+      if (near.isUsedFor(app)) {
+        app = await fetchNearUpdate(app);
+      }
       if (app.apkUrls.isEmpty) throw NoAPKError();
       if (app.preferredApkIndex >= app.apkUrls.length) {
         app = app.copyWith(preferredApkIndex: app.apkUrls.length - 1);
@@ -179,7 +185,6 @@ extension AppsProviderInstall on AppsProvider {
         app.apkUrls[app.preferredApkIndex].value,
       );
       final List<String> downloadUrls = [];
-      final near = NearSource(settingsProvider);
       for (final apkUrlValue in apkUrlValues) {
         // A repository (near) URL is fetched exactly as the index gave it: the
         // declared source's proxy prefix and the download mirrors would both
@@ -271,7 +276,9 @@ extension AppsProviderInstall on AppsProvider {
         additionalSettingsPlusSourceConfig,
         useExisting: useExisting,
         cancellationToken: cancellationToken,
-        mirrors: settingsProvider.downloadMirrorsList,
+        mirrors: near.isNearUrl(downloadUrl)
+            ? const []
+            : settingsProvider.downloadMirrorsList,
         strategy: settingsProvider.downloadStrategy,
       );
       completedDownloads = 1;
@@ -335,7 +342,9 @@ extension AppsProviderInstall on AppsProvider {
               useExisting: useExisting,
               headers: splitHeaders,
               cancellationToken: cancellationToken,
-              mirrors: settingsProvider.downloadMirrorsList,
+              mirrors: near.isNearUrl(splitUrl)
+                  ? const []
+                  : settingsProvider.downloadMirrorsList,
               strategy: settingsProvider.downloadStrategy,
             );
             if (splitFile.path.toLowerCase().endsWith('.apk')) {
@@ -786,8 +795,8 @@ extension AppsProviderInstall on AppsProvider {
       if (settingsProvider.keepDownloadedApks) {
         // Keep a copy in a user-visible location instead of deleting it, and
         // tell the user exactly where it was saved.
-        final keptPath = (await _keepApkFile(file.file, file.appId))?.path ??
-            file.file.path;
+        final keptPath =
+            (await _keepApkFile(file.file, file.appId))?.path ?? file.file.path;
         unawaited(
           notificationsProvider?.notify(
             DownloadedNotification(
@@ -931,9 +940,7 @@ extension AppsProviderInstall on AppsProvider {
       if (!destFile.existsSync()) {
         await file.copy(destFile.path);
       }
-      AppLogger.info(
-        'Kept downloaded APK for $appId at ${destFile.path}',
-      );
+      AppLogger.info('Kept downloaded APK for $appId at ${destFile.path}');
       return destFile;
     } catch (e) {
       AppLogger.warn(
@@ -1049,8 +1056,10 @@ extension AppsProviderInstall on AppsProvider {
       return HttpService.extractRootHost(Uri.parse(url).host);
     }
 
-    // If the picked APK comes from an origin different from the source, get user confirmation (if context provided)
+    // The selected LAN repository intentionally replaces the declared source.
+    // Confirm other APK origins that differ from the app's source.
     if (appFileUrl != null &&
+        !NearSource(settingsProvider).isNearUrl(appFileUrl.value) &&
         ![
           getHost(app.url),
           'placeholder',
@@ -1093,7 +1102,9 @@ extension AppsProviderInstall on AppsProvider {
       }
       MapEntry<String, String>? apkUrl;
       final trackOnly = apps[id]!.app.settings.getBool('trackOnly');
-      final refreshBeforeDownload = apps[id]!.needsRefreshBeforeDownload;
+      final refreshBeforeDownload =
+          NearSource(settingsProvider).isUsedFor(apps[id]!.app) ||
+          apps[id]!.needsRefreshBeforeDownload;
       if (refreshBeforeDownload) {
         try {
           await checkUpdate(apps[id]!.app.id);
@@ -1665,7 +1676,9 @@ extension AppsProviderInstall on AppsProvider {
             ),
           );
         }
-      } else if (!sayInstalled && context != null && installerModeKey != 'stock') {
+      } else if (!sayInstalled &&
+          context != null &&
+          installerModeKey != 'stock') {
         // Foreground install did not complete for a non-stock installer.
         // The stock path already toasts the concrete outcome (error message
         // or cancelled), so this generic fallback only covers other modes.

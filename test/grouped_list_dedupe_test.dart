@@ -3,6 +3,32 @@ import 'package:obtainium/models/app.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 
 void main() {
+  test(
+    'URL merge preserves different package IDs from the same repository',
+    () {
+      expect(
+        shouldMergeListAppByUrl(
+          storedId: 'com.ichi2.anki',
+          listId: 'com.pt123123.ankiplus',
+        ),
+        isFalse,
+      );
+      expect(
+        shouldMergeListAppByUrl(
+          storedId: '100000000001',
+          listId: 'com.pt123123.ankiplus',
+        ),
+        isTrue,
+      );
+      expect(
+        shouldMergeListAppByUrl(
+          storedId: 'com.pt123123.ankiplus',
+          listId: '100000000001',
+        ),
+        isTrue,
+      );
+    },
+  );
   group('resolveSameUrlDuplicates (grouped-list merge repair)', () {
     // The regression: installing a placeholder-ID app renames its ID to the
     // real package name, and the next startup merge re-added the placeholder
@@ -53,7 +79,18 @@ void main() {
   });
 
   group('shouldAdoptListAppId (list.json package-ID rename)', () {
-    test('adopts a real new package id for an uninstalled old one', () {
+    test('placeholder adopts the real package ID', () {
+      expect(
+        shouldAdoptListAppId(
+          storedId: '100000000001',
+          listId: 'com.pt123123.ankiplus',
+          storedInstalled: false,
+          listIdAlreadyTracked: false,
+        ),
+        isTrue,
+      );
+    });
+    test('does not adopt another real package even when uninstalled', () {
       expect(
         shouldAdoptListAppId(
           storedId: 'com.ichi2.anki',
@@ -61,7 +98,7 @@ void main() {
           storedInstalled: false,
           listIdAlreadyTracked: false,
         ),
-        isTrue,
+        isFalse,
       );
     });
 

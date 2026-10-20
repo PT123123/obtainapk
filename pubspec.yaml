@@ -2,7 +2,7 @@ name: obtainium
 description: Get Android app updates straight from the source.
 publish_to: 'none'
 
-version: 1.6.43+2383
+version: 1.6.53+2393
 
 environment:
   sdk: ^3.12.0
@@ -96,7 +96,6 @@ flutter:
     - assets/graphics/
     - assets/ca-certs/
     - marketplace/apps.json
-    - assets/list.json
 
   fonts:
       - family: Montserrat

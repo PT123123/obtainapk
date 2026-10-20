@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
+import 'package:obtainium/services/repository_catalog.dart';
 
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
@@ -348,7 +349,13 @@ extension AppsProviderImportExport on AppsProvider {
     var suppressed = 0;
     parsedApps.forEach((id, parsed) {
       final tags = tagsByAppId[id]!.toList();
-      final existing = apps[id]?.app ?? existingByUrl[parsed.url];
+      final urlMatch = existingByUrl[parsed.url];
+      final existing =
+          apps[id]?.app ??
+          (urlMatch != null &&
+                  shouldMergeListAppByUrl(storedId: urlMatch.id, listId: id)
+              ? urlMatch
+              : null);
       if (existing == null && suppressedUrls.contains(parsed.url)) {
         suppressed++;
         return;
@@ -447,79 +454,125 @@ extension AppsProviderImportExport on AppsProvider {
     );
   }
 
-  /// Pulls the grouped app list (`list.json`) and merges it into the store.
-  ///
-  /// Only ever called from the user's action in Settings - it used to run on
-  /// every startup, which re-added apps the user had deleted. Tries the
-  /// configured URL, then a proxy mirror of it, then the bundled
-  /// `assets/list.json` so the groups still work offline.
+  /// Synchronizes the repository's actual package catalog, with a durable
+  /// offline snapshot. Concurrent startup/manual refreshes share one operation.
   Future<({String source, int added, int updated, int suppressed})>
-  syncGroupedList() async {
-    final url = settingsProvider.groupedListUrl;
-    // Reuse the LAN repository's DNS-SD discovery. Its HTTP root serves both
-    // the F-Droid index and the ObtainAPK grouped-list contract at /list.json.
-    final candidateUrls = <String>[];
+  syncGroupedList() {
+    final running = catalogSyncInFlight;
+    if (running != null) return running;
+    final sync = _syncRepositoryCatalog();
+    catalogSyncInFlight = sync;
+    return sync.whenComplete(() {
+      if (identical(catalogSyncInFlight, sync)) catalogSyncInFlight = null;
+    });
+  }
+
+  Future<({String source, int added, int updated, int suppressed})>
+  _syncRepositoryCatalog() async {
+    await waitForAppsToLoad();
+    final legacyDefaultIds = await _legacyMarketplaceDefaultIds();
+    late final RepositoryCatalog catalog;
     try {
-      final lanBase = await const MethodChannel(
-        'com.pt123123.obtainapk/lan_repo_discovery',
-      ).invokeMethod<String>('discover').timeout(const Duration(seconds: 2));
-      if (lanBase != null && lanBase.isNotEmpty) {
-        candidateUrls.add(
-          '${lanBase.replaceFirst(RegExp(r'/+$'), '')}/list.json',
-        );
-      }
-    } catch (e) {
-      AppLogger.info('LAN grouped-list discovery unavailable: $e');
+      catalog = await RepositoryCatalogService(settingsProvider).load();
+    } catch (error, stack) {
+      // Without a live catalog or a valid cached snapshot, old bundled entries
+      // must not masquerade as the LAN repository's current app list.
+      final staleIds = apps.values
+          .where((entry) {
+            final app = entry.app;
+            final isInstalled =
+                entry.installedInfo != null || app.installedVersion != null;
+            return !isInstalled &&
+                (app.additionalSettings['repositoryManaged'] == true ||
+                    app.groups.isNotEmpty ||
+                    legacyDefaultIds.contains(app.id));
+          })
+          .map((entry) => entry.app.id)
+          .toList();
+      if (staleIds.isNotEmpty) await removeApps(staleIds);
+      AppLogger.error(
+        error,
+        stackTrace: stack,
+        message: 'LAN repository catalog unavailable; stale defaults removed',
+      );
+      Error.throwWithStackTrace(error, stack);
     }
-    candidateUrls.addAll([url, 'https://ghproxy.com/$url']);
-    final failures = <String>[];
-    String? raw;
-    var source = '';
-    for (final u in candidateUrls) {
-      try {
-        final resp = await http
-            .get(Uri.parse(u))
-            .timeout(const Duration(seconds: 12));
-        if (resp.statusCode >= 200 &&
-            resp.statusCode < 300 &&
-            resp.body.trim().isNotEmpty) {
-          raw = resp.body;
-          source = u;
-          break;
-        }
-        failures.add('$u → HTTP ${resp.statusCode}');
-      } catch (e) {
-        AppLogger.warn('Grouped list fetch failed for $u: $e');
-        failures.add('$u → $e');
-      }
-    }
-    if (raw == null) {
-      raw = await rootBundle
-          .loadString('assets/list.json')
-          .catchError((_) => '');
-      source = 'assets/list.json';
-    }
-    if (raw.trim().isEmpty) {
-      throw ObtainiumError('${tr('failedToImport')}: ${failures.join('; ')}');
-    }
-    final merged = await mergeGroupedList(raw);
-    settingsProvider.recordGroupedListSync(
-      added: merged.added,
-      updated: merged.updated,
-      suppressed: merged.suppressed,
-      source: source,
+    final plan = planCatalogMerge(
+      catalog,
+      apps.values.map(
+        (entry) => (
+          app: entry.app,
+          installed:
+              entry.installedInfo != null ||
+              entry.app.installedVersion != null ||
+              entry.downloadProgress != null,
+        ),
+      ),
+      settingsProvider.groupedListSuppressed.toSet(),
     );
-    AppLogger.info(
-      'Merged grouped list from $source: '
-      '${merged.added} added, ${merged.updated} updated, '
-      '${merged.suppressed} skipped as removed',
+    // Older builds imported a bundled marketplace list once. Treat those rows
+    // as defaults, not as user-tracked apps, when the LAN index is authoritative.
+    final publishedIds = catalog.apps.map((app) => app.id).toSet();
+    for (final entry in apps.values) {
+      final app = entry.app;
+      final isInstalled =
+          entry.installedInfo != null || app.installedVersion != null;
+      if (!isInstalled &&
+          legacyDefaultIds.contains(app.id) &&
+          !publishedIds.contains(app.id)) {
+        plan.remove.add(app.id);
+      }
+    }
+    // Apply additions before removals, so a failed save can't discard the old
+    // placeholder record. removeApps itself never writes deletion tombstones.
+    if (plan.save.isNotEmpty) {
+      await saveApps(
+        plan.save.map((app) => appFromStoredJson(app.toJson())).toList(),
+        onlyIfExists: false,
+      );
+    }
+    if (plan.remove.isNotEmpty) await removeApps(plan.remove.toList());
+    final groupIds = {
+      for (final app in catalog.apps) ...app.groups,
+      for (final entry in apps.values) ...entry.app.groups,
+    };
+    settingsProvider.groupedListGroups = [
+      for (final id in groupIds)
+        {'id': id, 'name': id == 'repository' ? '仓库' : id},
+    ];
+    settingsProvider.recordGroupedListSync(
+      added: plan.added,
+      updated: plan.updated,
+      suppressed: plan.suppressed,
+      source: catalog.source,
     );
     return (
-      source: source,
-      added: merged.added,
-      updated: merged.updated,
-      suppressed: merged.suppressed,
+      source: catalog.source,
+      added: plan.added,
+      updated: plan.updated,
+      suppressed: plan.suppressed,
     );
+  }
+
+  Future<Set<String>> _legacyMarketplaceDefaultIds() async {
+    if (settingsProvider.prefs?.getBool('marketplaceDefaultsImported') !=
+        true) {
+      return const {};
+    }
+    try {
+      final decoded = jsonDecode(
+        await rootBundle.loadString('marketplace/apps.json'),
+      );
+      if (decoded is! Map || decoded['apps'] is! List) return const {};
+      return (decoded['apps'] as List)
+          .whereType<Map>()
+          .map((app) => app['id'])
+          .whereType<String>()
+          .toSet();
+    } catch (error, stack) {
+      AppLogger.warn('Could not read bundled marketplace IDs: $error\n$stack');
+      return const {};
+    }
   }
 
   bool _listEquals(List<String> a, List<String> b) {
@@ -625,10 +678,8 @@ class ExportSchema {
 /// Whether a list.json entry's package [listId] should replace the [storedId]
 /// the store currently uses for the same app URL.
 ///
-/// Only a real rename qualifies: the two IDs differ, nothing is installed under
-/// the old [storedId] (so re-pointing cannot orphan a live app), [listId] is not
-/// already tracked by another record, and [listId] is a valid package id rather
-/// than a fresh placeholder.
+/// Only a placeholder can adopt a real package ID. Two real IDs represent
+/// separate apps even when the old package is currently uninstalled.
 bool shouldAdoptListAppId({
   required String storedId,
   required String listId,
@@ -636,11 +687,25 @@ bool shouldAdoptListAppId({
   required bool listIdAlreadyTracked,
 }) {
   if (storedId == listId) return false;
+  if (!shouldMergeListAppByUrl(storedId: storedId, listId: listId)) {
+    return false;
+  }
   if (storedInstalled || listIdAlreadyTracked) return false;
   // A placeholder id (all-digits or 12-hex) is not a real package name, so it
   // must not be adopted as the app's ID.
   return !(RegExp(r'^[0-9]+$').hasMatch(listId) ||
       RegExp(r'^[0-9a-f]{12}$').hasMatch(listId));
+}
+
+/// A source repository can publish several independent Android packages.
+/// URL matching is only sufficient while at least one ID is a placeholder.
+bool shouldMergeListAppByUrl({
+  required String storedId,
+  required String listId,
+}) {
+  bool placeholder(String id) =>
+      RegExp(r'^(?:[0-9]+|[0-9a-f]{12})$').hasMatch(id);
+  return storedId == listId || placeholder(storedId) || placeholder(listId);
 }
 
 /// Tombstones that still apply: an app removed from a grouped list stays out of

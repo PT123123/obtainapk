@@ -221,9 +221,11 @@ Future<File> downloadFileWithRetry(
       : [directUrl, ...mirrorUrls];
   Object? lastError;
   for (final url in urlQueue) {
-    final settings = url == directUrl
-        ? additionalSettings
-        : Map<String, dynamic>.from(additionalSettings)..['url'] = url;
+    final settings =
+        url == directUrl
+              ? additionalSettings
+              : Map<String, dynamic>.from(additionalSettings)
+          ..['url'] = url;
     try {
       return await downloadFile(
         fileName,
@@ -238,7 +240,8 @@ Future<File> downloadFileWithRetry(
     } catch (e) {
       if (e is CancellationException) rethrow;
       final bool retryable =
-          (e is HTTPStatusError && (e.statusCode == 429 || e.statusCode >= 500)) ||
+          (e is HTTPStatusError &&
+              (e.statusCode == 429 || e.statusCode >= 500)) ||
           e is ClientException ||
           e is SocketException ||
           e is TimeoutException ||
@@ -802,9 +805,8 @@ Future<PackageInfo?> getInstalledInfo(String? packageName) async {
 /// Normalizes an app name/label for comparison: lowercased with every
 /// non-alphanumeric character (CJK kept) stripped, so "My App!" and "my-app"
 /// compare equal.
-String normalizeAppLabel(String s) => s
-    .toLowerCase()
-    .replaceAll(RegExp(r'[^a-z0-9\u4e00-\u9fff]'), '');
+String normalizeAppLabel(String s) =>
+    s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9\u4e00-\u9fff]'), '');
 
 /// Cached installed-package-name -> normalized label map. Keyed by the set of
 /// installed package names so it is rebuilt only when the installed app set
@@ -1102,6 +1104,9 @@ class AppsProvider with ChangeNotifier {
   /// Public wrapper around the protected [notifyListeners] so the provider's
   /// part-file extensions can request listeners to rebuild.
   void notify() => notifyListeners();
+
+  Future<({String source, int added, int updated, int suppressed})>?
+  catalogSyncInFlight;
 
   /// Registers a cancellation token for an in-flight download of [appId].
   CancellationToken registerDownloadCancellation(String appId) {

@@ -293,7 +293,11 @@ class _SettingsPageState extends State<SettingsPage> {
             label: '打开 GitHub 源',
             value: settingsProvider.githubSourceEnabled,
             onChanged: (value) => settingsProvider.githubSourceEnabled = value,
-            helpWidgets: [Text('打开后所有应用使用各自声明的远端网站源；关闭时默认走局域网仓库。')],
+            helpWidgets: [
+              const Text(
+                '打开后所有应用使用各自声明的远端网站源；关闭时所有应用仅从局域网仓库获取信息，缺包或连接失败不会回退到远端。',
+              ),
+            ],
           ),
         ),
         Column(
@@ -1242,11 +1246,7 @@ class _MinimumUpdateAgeSliderTileState
   }
 }
 
-/// Settings for the grouped app list (`list.json`).
-///
-/// The list is no longer merged on startup - that resurrected every app the
-/// user had deleted. Syncing is this page's button, and apps removed from a
-/// group are listed here so they can be brought back.
+/// Repository catalog synchronization, offline cache status, and removals.
 class _GroupedListSection extends StatefulWidget {
   const _GroupedListSection();
 
@@ -1300,7 +1300,7 @@ class _GroupedListSectionState extends State<_GroupedListSection> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('从 GitHub 同步应用列表'),
+                  : const Text('从仓库同步应用列表'),
             ),
           ),
         ),
@@ -1308,33 +1308,12 @@ class _GroupedListSectionState extends State<_GroupedListSection> {
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
           child: Text(
             lastSync == null
-                ? '应用列表不会开机自动拉取，点上面的按钮才会合并进来。'
+                ? '应用列表由仓库提供，启动和刷新时自动同步；离线使用上次成功的缓存。'
                 : '${_lastSyncLine(DateTime.fromMillisecondsSinceEpoch(lastSync.at))}\n'
                       '新增 ${lastSync.added} 个，更新 ${lastSync.updated} 个，'
                       '跳过已剔除 ${lastSync.suppressed} 个\n'
                       '来源：${lastSync.source}',
             style: captionStyle,
-          ),
-        ),
-        ConnectedCard(
-          color: cs.surfaceContainerHighest,
-          child: GeneratedForm(
-            tileMode: true,
-            items: [
-              [
-                GeneratedFormTextField(
-                  'groupedListUrl',
-                  label: '应用列表地址（list.json）',
-                  required: false,
-                )..value = settingsProvider.groupedListUrl,
-              ],
-            ],
-            onValueChanges: (values, valid, isBuilding) {
-              if (valid && !isBuilding) {
-                settingsProvider.groupedListUrl =
-                    (values['groupedListUrl'] as String?) ?? '';
-              }
-            },
           ),
         ),
         if (suppressed.isNotEmpty)
@@ -1355,7 +1334,12 @@ class _GroupedListSectionState extends State<_GroupedListSection> {
                   color: cs.onSurfaceVariant,
                 ),
                 const SizedBox(width: 12),
-                Expanded(child: Text(url, style: captionStyle)),
+                Expanded(
+                  child: Text(
+                    url.startsWith('package:') ? url.substring(8) : url,
+                    style: captionStyle,
+                  ),
+                ),
                 TextButton(
                   onPressed: () => settingsProvider.restoreGroupedListApp(url),
                   child: const Text('恢复'),

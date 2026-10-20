@@ -421,7 +421,16 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Metadata of the groups defined in the remote grouped list (list.json),
+  /// The library shown on the main app list. LAN is the default entry.
+  String get selectedAppLibrary =>
+      getSettingString('selectedAppLibrary') == 'github' ? 'github' : 'lan';
+
+  set selectedAppLibrary(String library) {
+    prefs?.setString('selectedAppLibrary', library == 'github' ? 'github' : 'lan');
+    notifyListeners();
+  }
+
+  /// Metadata of the groups supplied by the repository catalog,
   /// persisted so the group switcher can render chips without re-fetching.
   /// Stored as a JSON list of `{'id': ..., 'name': ...}`.
   List<Map<String, String>> get groupedListGroups {
@@ -451,24 +460,8 @@ class SettingsProvider with ChangeNotifier {
     // by the app store change anyway.
   }
 
-  /// Source of the grouped app list (`list.json`) used by the manual sync.
-  String get groupedListUrl {
-    final stored = getSettingString('groupedListUrl')?.trim();
-    return (stored == null || stored.isEmpty) ? defaultGroupedListUrl : stored;
-  }
-
-  set groupedListUrl(String url) {
-    final trimmed = url.trim();
-    if (trimmed.isEmpty || trimmed == defaultGroupedListUrl) {
-      prefs?.remove('groupedListUrl');
-    } else {
-      prefs?.setString('groupedListUrl', trimmed);
-    }
-    notifyListeners();
-  }
-
-  /// Base URL of the LAN F-Droid repository — checked first for updates and
-  /// downloads. Apps not published there use their original source. Normalized
+  /// Base URL of the LAN F-Droid repository used while remote sources are off.
+  /// Missing apps never fall back to their original source. Normalized
   /// without a trailing slash so `'$baseUrl/?appId=...'` and prefix comparisons stay valid.
   String get lanRepoUrl {
     final stored = getSettingString('lanRepoUrl')?.trim();
@@ -485,8 +478,9 @@ class SettingsProvider with ChangeNotifier {
 
   set lanRepoUrl(String url) {
     var trimmed = url.trim();
-    if (trimmed.endsWith('/'))
+    if (trimmed.endsWith('/')) {
       trimmed = trimmed.substring(0, trimmed.length - 1);
+    }
     if (trimmed.isEmpty ||
         trimmed == defaultLanRepoUrl ||
         trimmed == 'http://192.168.5.34:8080') {
@@ -547,7 +541,7 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 
-  /// Timestamp + outcome of the last manual `list.json` sync, shown in Settings
+  /// Timestamp + outcome of the last repository catalog sync, shown in Settings
   /// so a silent sync failure can be told apart from a sync that added nothing.
   ({int at, int added, int updated, int suppressed, String source})?
   get groupedListLastSync {
@@ -1010,7 +1004,7 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Parsed mirror list (normalized to "https://<host>/" form), ready for URL
+  /// Parsed mirror list (normalized to `https://<host>/` form), ready for URL
   /// rewriting.
   List<String> get downloadMirrorsList {
     final mirrors = <String>[];

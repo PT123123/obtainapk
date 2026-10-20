@@ -18,6 +18,7 @@ import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:obtainium/services/repository_catalog.dart';
 
 /// App persistence (load/save/remove), icons, and version-detection helpers.
 const _corruptFileSuffix = '.corrupt';
@@ -805,10 +806,14 @@ extension AppsProviderLifecycle on AppsProvider {
         await saveApps(apps, attemptToCorrectInstallStatus: false);
       }
       if (remove) {
-        // Deleting a grouped-list app is a decision, not an accident: record it
-        // so the next manual `list.json` sync does not re-add it.
-        for (final url in groupedListUrlsOf(apps)) {
-          settingsProvider.suppressGroupedListApp(url);
+        // Package identity survives repository URL and LAN address changes.
+        for (final app in apps) {
+          if (app.additionalSettings['repositoryManaged'] == true ||
+              app.groups.isNotEmpty) {
+            settingsProvider.suppressGroupedListApp(
+              catalogSuppressionKey(app.id),
+            );
+          }
         }
         await removeApps(apps.map((e) => e.id).toList());
       }

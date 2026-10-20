@@ -62,3 +62,8 @@ android/*.keystore
 
 # FVM Version Cache
 .fvm/
+
+# Local build leftovers and device dumps (not sources)
+*.apk
+/postinstall.png
+/window.xml

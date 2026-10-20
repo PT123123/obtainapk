@@ -36,6 +36,7 @@ class ObtainAppDrawer extends StatelessWidget {
     final installed = appsProvider.apps.values
         .where((a) => a.installedInfo != null)
         .length;
+    final selectedLibrary = context.watch<SettingsProvider>().selectedAppLibrary;
 
     return Drawer(
       child: SafeArea(
@@ -71,11 +72,18 @@ class ObtainAppDrawer extends StatelessWidget {
               child: Column(
                 children: [
                   _NavTile(
-                    icon: Icons.list_alt_rounded,
-                    label: '应用列表',
-                    subtitle: '正在跟踪更新的应用',
-                    active: activePage == ObtainDrawerPage.apps,
-                    onTap: () => _select(context, ObtainDrawerPage.apps),
+                    icon: Icons.wifi_tethering_rounded,
+                    label: '局域网库',
+                    subtitle: '本地仓库中的应用',
+                    active: activePage == ObtainDrawerPage.apps && selectedLibrary == 'lan',
+                    onTap: () => _selectLibrary(context, 'lan', selectedLibrary),
+                  ),
+                  _NavTile(
+                    icon: Icons.code_rounded,
+                    label: 'GitHub 库',
+                    subtitle: 'GitHub 等远端来源的应用',
+                    active: activePage == ObtainDrawerPage.apps && selectedLibrary == 'github',
+                    onTap: () => _selectLibrary(context, 'github', selectedLibrary),
                   ),
                   _NavTile(
                     icon: Icons.apps_rounded,
@@ -91,6 +99,13 @@ class ObtainAppDrawer extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _selectLibrary(BuildContext context, String library, String current) {
+    Scaffold.maybeOf(context)?.closeDrawer();
+    if (library == current) return;
+    context.read<SettingsProvider>().selectedAppLibrary = library;
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 }
 

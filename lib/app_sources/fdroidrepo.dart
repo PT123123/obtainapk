@@ -38,6 +38,7 @@ class _FdroidIndexEntry {
   final String summary;
   final String? author;
   final String? changelog;
+  final List<String> groups;
 
   /// v1-only "suggested" version code (index-v2 has no equivalent).
   final int? marketVersionCode;
@@ -50,6 +51,7 @@ class _FdroidIndexEntry {
     this.summary = '',
     this.author,
     this.changelog,
+    this.groups = const [],
     this.marketVersionCode,
     required this.versions,
   });
@@ -59,7 +61,12 @@ class _FdroidIndexEntry {
 class _FdroidIndex {
   final String baseUrl;
   final List<_FdroidIndexEntry> entries;
-  const _FdroidIndex({required this.baseUrl, required this.entries});
+  final bool complete;
+  const _FdroidIndex({
+    required this.baseUrl,
+    required this.entries,
+    this.complete = true,
+  });
 }
 
 class FDroidRepo extends AppSource {
@@ -392,6 +399,9 @@ class FDroidRepo extends AppSource {
             author: _localizedString(
               metadata is Map ? metadata['authorName'] : null,
             ),
+            groups: metadata is Map && metadata['categories'] is List
+                ? (metadata['categories'] as List).whereType<String>().toList()
+                : const [],
             changelog: _localizedString(
               metadata is Map ? metadata['changelog'] : null,
             ),
@@ -399,8 +409,12 @@ class FDroidRepo extends AppSource {
           ),
         );
       });
-      if (entries.isEmpty) return null;
-      return _FdroidIndex(baseUrl: baseUrl, entries: entries);
+      if (packages.isNotEmpty && entries.isEmpty) return null;
+      return _FdroidIndex(
+        baseUrl: baseUrl,
+        entries: entries,
+        complete: entries.length == packages.length,
+      );
     } catch (_) {
       return null;
     }
@@ -420,6 +434,9 @@ class FDroidRepo extends AppSource {
 
   _FdroidIndex _parseIndexV1(Response res) {
     final body = parse(res.body);
+    if (body.querySelector('fdroid') == null) {
+      throw const FormatException('Invalid F-Droid repository index');
+    }
     final baseUrl = AppSource.stripLastPathSegment(
       (res.request?.url ?? Uri.parse('')).toString(),
     );
@@ -464,6 +481,7 @@ class FDroidRepo extends AppSource {
           summary: app.querySelector('summary')?.innerHtml ?? '',
           author: app.querySelector('author')?.innerHtml,
           changelog: app.querySelector('changelog')?.innerHtml,
+          groups: app.querySelectorAll('category').map((e) => e.text).toList(),
           marketVersionCode: int.tryParse(
             app.querySelector('marketvercode')?.innerHtml ?? '',
           ),
@@ -543,10 +561,6 @@ class FDroidRepo extends AppSource {
         appIdOrName = standardUri.queryParameters['appId'];
       }
       standardUrl = _removeQueryParamsFromUrl(standardUrl);
-      final bool pickHighestVersionCode =
-          additionalSettings['pickHighestVersionCode'] == true;
-      final bool trySelectingSuggestedVersionCode =
-          additionalSettings['trySelectingSuggestedVersionCode'] == true;
       if (appIdOrName == null) {
         throw NoReleasesError();
       }
@@ -559,63 +573,117 @@ class FDroidRepo extends AppSource {
           code: 'APP_NOT_IN_REPO',
         );
       }
-      final releases = entry.versions;
-      if (releases.isEmpty) {
-        throw NoReleasesError();
-      }
-      List<_FdroidVersion> selected = [];
-      if (trySelectingSuggestedVersionCode && entry.marketVersionCode != null) {
-        selected = releases
-            .where((v) => v.versionCode == entry.marketVersionCode)
-            .toList();
-      }
-      var candidates = releases;
-      if (selected.isEmpty && trySelectingSuggestedVersionCode) {
-        // index-v2 has no suggested version code; the toggle instead means
-        // "prefer stable" — drop builds marked as non-stable (e.g. Beta).
-        final nonStable = releases
-            .where(
-              (v) =>
-                  v.releaseChannels.isNotEmpty &&
-                  !v.releaseChannels.any((c) => c.toLowerCase() == 'stable'),
-            )
-            .toList();
-        if (nonStable.isNotEmpty && nonStable.length < releases.length) {
-          candidates = releases.where((v) => !nonStable.contains(v)).toList();
-        }
-      }
-      if (selected.isEmpty) {
-        if (pickHighestVersionCode) {
-          selected = [candidates.first];
-        } else {
-          final latestVersionName = candidates.first.versionName;
-          selected = candidates
-              .where((v) => v.versionName == latestVersionName)
-              .toList();
-        }
-      }
-      if (selected.isEmpty) {
-        throw NoReleasesError();
-      }
-      selected = await _filterVersionsByArch(selected);
-      if (selected.isEmpty) {
-        throw NoReleasesError();
-      }
-      final useVersionCode =
-          additionalSettings['useVersionCodeAsOSVersion'] == true;
-      return APKDetails(
-        useVersionCode
-            ? selected.first.versionCode.toString()
-            : selected.first.versionName,
-        getApkUrlsFromUrls(
-          selected.map((v) => '${index.baseUrl}/${v.apkName}').toList(),
-        ),
-        AppNames(entry.author ?? name, entry.name),
-        releaseDate: selected.first.added,
-        changeLog: entry.changelog,
-      );
+      return await _detailsForEntry(index, entry, additionalSettings);
     } catch (e) {
       rethrowOrWrapError(e);
     }
+  }
+
+  Future<APKDetails> _detailsForEntry(
+    _FdroidIndex index,
+    _FdroidIndexEntry entry,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    final pickHighestVersionCode =
+        additionalSettings['pickHighestVersionCode'] == true;
+    final trySelectingSuggestedVersionCode =
+        additionalSettings['trySelectingSuggestedVersionCode'] == true;
+    final releases = entry.versions;
+    if (releases.isEmpty) {
+      throw NoReleasesError();
+    }
+    List<_FdroidVersion> selected = [];
+    if (trySelectingSuggestedVersionCode && entry.marketVersionCode != null) {
+      selected = releases
+          .where((v) => v.versionCode == entry.marketVersionCode)
+          .toList();
+    }
+    var candidates = releases;
+    if (selected.isEmpty && trySelectingSuggestedVersionCode) {
+      // index-v2 has no suggested version code; the toggle instead means
+      // "prefer stable" — drop builds marked as non-stable (e.g. Beta).
+      final nonStable = releases
+          .where(
+            (v) =>
+                v.releaseChannels.isNotEmpty &&
+                !v.releaseChannels.any((c) => c.toLowerCase() == 'stable'),
+          )
+          .toList();
+      if (nonStable.isNotEmpty && nonStable.length < releases.length) {
+        candidates = releases.where((v) => !nonStable.contains(v)).toList();
+      }
+    }
+    if (selected.isEmpty) {
+      if (pickHighestVersionCode) {
+        selected = [candidates.first];
+      } else {
+        final latestVersionName = candidates.first.versionName;
+        selected = candidates
+            .where((v) => v.versionName == latestVersionName)
+            .toList();
+      }
+    }
+    if (selected.isEmpty) {
+      throw NoReleasesError();
+    }
+    selected = await _filterVersionsByArch(selected);
+    if (selected.isEmpty) {
+      throw NoReleasesError();
+    }
+    final useVersionCode =
+        additionalSettings['useVersionCodeAsOSVersion'] == true;
+    return APKDetails(
+      useVersionCode
+          ? selected.first.versionCode.toString()
+          : selected.first.versionName,
+      getApkUrlsFromUrls(
+        selected.map((v) => '${index.baseUrl}/${v.apkName}').toList(),
+      ),
+      AppNames(entry.author ?? name, entry.name),
+      releaseDate: selected.first.added,
+      changeLog: entry.changelog,
+    );
+  }
+
+  /// Enumerates actual packages using one index request for the whole catalog.
+  Future<List<App>> getCatalogApps(
+    String baseUrl,
+    Map<String, dynamic> settings,
+  ) async {
+    final index = await _fetchIndex(baseUrl, settings);
+    if (!index.complete) {
+      throw const FormatException('Incomplete repository catalog');
+    }
+    final apps = <App>[];
+    for (final entry in index.entries) {
+      if (entry.versions.isEmpty) continue;
+      final details = await _detailsForEntry(index, entry, {
+        ...settings,
+        'trySelectingSuggestedVersionCode': true,
+      });
+      apps.add(
+        App(
+          id: entry.id,
+          url: '${index.baseUrl}/?appId=${Uri.encodeQueryComponent(entry.id)}',
+          overrideSource: sourceIdentifier,
+          author: entry.author ?? name,
+          name: entry.name,
+          latestVersion: details.version,
+          apkUrls: details.apkUrls,
+          preferredApkIndex: 0,
+          releaseDate: details.releaseDate,
+          changeLog: details.changeLog,
+          groups: entry.groups.isEmpty ? const ['repository'] : entry.groups,
+          additionalSettings: {
+            'appIdOrName': entry.id,
+            'allowInsecure': true,
+            'trySelectingSuggestedVersionCode': true,
+            'about': entry.summary,
+            'repositoryManaged': true,
+          },
+        ),
+      );
+    }
+    return apps;
   }
 }

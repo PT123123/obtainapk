@@ -67,6 +67,7 @@ Future<bool> showContinueCancelDialog(
 }
 
 void showMessage(dynamic e, BuildContext context, {bool isError = false}) {
+  if (!context.mounted) return;
   if (isError) context.read<SettingsProvider>().heavyImpact();
   if (isError) {
     AppLogger.error(e, message: e.toString());
@@ -78,35 +79,79 @@ void showMessage(dynamic e, BuildContext context, {bool isError = false}) {
       context,
     ).showSnackBar(SnackBar(content: Text(e.toString())));
   } else {
-    showDialog(
-      context: context,
-      builder: (BuildContext ctx) {
-        return AlertDialog(
-          scrollable: true,
-          title: Text(
-            e is MultiAppMultiError
-                ? tr(isError ? 'someErrors' : 'updates')
-                : tr(isError ? 'unexpectedError' : 'unknown'),
-          ),
-          content: GestureDetector(
-            onLongPress: () {
-              unawaited(copyToClipboard(context, e.toString()));
-            },
-            child: Text(e.toString()),
-          ),
-          actions: [
-            FilledButton.tonal(
-              autofocus: context.read<SettingsProvider>().isTV,
-              onPressed: () {
-                Navigator.of(context).pop(null);
-              },
-              child: Text(tr('ok')),
+    // Background checks may fail repeatedly. Do not stack modal routes over
+    // the user's controls; details are opened only when explicitly requested.
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              e is MultiAppMultiError
+                  ? tr(isError ? 'someErrors' : 'updates')
+                  : tr(isError ? 'unexpectedError' : 'unknown'),
             ),
+            if (isError && e is! MultiAppMultiError)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  e.toString(),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
           ],
-        );
-      },
+        ),
+        duration: const Duration(seconds: 10),
+        action: SnackBarAction(
+          label: tr('errorDetails'),
+          onPressed: () {
+            if (context.mounted) {
+              _showMessageDetails(e, context, isError: isError);
+            }
+          },
+        ),
+      ),
     );
   }
+}
+
+void _showMessageDetails(
+  dynamic e,
+  BuildContext context, {
+  required bool isError,
+}) {
+  showDialog<void>(
+    context: context,
+    builder: (BuildContext ctx) {
+      return AlertDialog(
+        scrollable: true,
+        title: Text(
+          e is MultiAppMultiError
+              ? tr(isError ? 'someErrors' : 'updates')
+              : tr(isError ? 'unexpectedError' : 'unknown'),
+        ),
+        content: GestureDetector(
+          onLongPress: () {
+            unawaited(copyToClipboard(context, e.toString()));
+          },
+          child: Text(e.toString()),
+        ),
+        actions: [
+          FilledButton.tonal(
+            autofocus: context.read<SettingsProvider>().isTV,
+            onPressed: () {
+              Navigator.of(ctx).pop();
+            },
+            child: Text(tr('ok')),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 void showError(dynamic e, BuildContext context) {
