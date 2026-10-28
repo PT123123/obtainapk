@@ -15,8 +15,10 @@ class NearSourceResolution {
 
 /// The LAN F-Droid repository (near source) published by `lanpub serve`.
 ///
-/// When the global remote-source switch is off, every app uses this repository.
-/// Missing apps and repository failures never fall back to the original source.
+/// An app uses this repository when the index owns it (`repositoryManaged`, the
+/// same flag that puts the row in the 局域网库), never because of the global
+/// remote-source switch: a legacy GitHub row would only ever fail here, since
+/// the repository does not publish that package.
 class NearSource {
   static const _repoRequestTimeout = Duration(seconds: 2);
   static const _repoRequestSettings = <String, dynamic>{
@@ -82,9 +84,11 @@ class NearSource {
     throw ObtainiumError('未发现局域网仓库，请确认电脑上的 lanpub serve 正在运行');
   }
 
-  /// The global switch is authoritative, including for apps with a legacy
-  /// `useRemoteSource` setting and when the configured LAN URL is invalid.
-  bool isUsedFor(App app) => !_settingsProvider.githubSourceEnabled;
+  /// Whether [app] is updated from the repository: the index owns it, or its
+  /// URL already points inside the repository. The GitHub-source switch does
+  /// not move repository packages over to the remote.
+  bool isUsedFor(App app) =>
+      app.additionalSettings['repositoryManaged'] == true || isNearUrl(app.url);
 
   /// True when [url] lives inside the repository, so it must not be rewritten
   /// by the app's declared (GitHub) source prefix or by download mirrors.

@@ -1114,16 +1114,21 @@ class AppsPageState extends State<AppsPage> {
   }
 
   /// A horizontal, clickable group switcher shown above the app list. Renders a
-  /// "全部" (all) chip plus one chip per group defined in the remote grouped
-  /// catalog. Tapping a chip filters the list by that group's tag.
-  Widget _getGroupSwitcherSliver(BuildContext context) {
-    final groups = settingsProvider.groupedListGroups;
-    if (groups.isEmpty) {
+  /// "全部" (all) chip plus one chip per group actually used by the apps in the
+  /// library on screen. Tapping a chip filters the list by that group's tag.
+  Widget _getGroupSwitcherSliver(
+    BuildContext context,
+    List<String> availableGroups,
+    String? activeGroup,
+  ) {
+    if (availableGroups.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
     final chips = <Widget>[
-      _groupChip(context, null, '全部'),
-      ...groups.map((g) => _groupChip(context, g['id']!, g['name']!)),
+      _groupChip(context, null, '全部', activeGroup),
+      ...availableGroups.map(
+        (id) => _groupChip(context, id, _groupLabel(id), activeGroup),
+      ),
     ];
     return SliverToBoxAdapter(
       child: Padding(
@@ -1136,8 +1141,16 @@ class AppsPageState extends State<AppsPage> {
     );
   }
 
-  Widget _groupChip(BuildContext context, String? groupId, String label) {
-    final selected = _selectedGroup == groupId;
+  static String _groupLabel(String groupId) =>
+      groupId == 'repository' ? '仓库' : groupId;
+
+  Widget _groupChip(
+    BuildContext context,
+    String? groupId,
+    String label,
+    String? activeGroup,
+  ) {
+    final selected = activeGroup == groupId;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: ChoiceChip(
@@ -1322,10 +1335,17 @@ class AppsPageState extends State<AppsPage> {
     }).toList();
     // Group switcher (分组切换): narrow the list to the selected group's tag.
     // Group tags live in [App.groups] (not categories) so the category editor
-    // can never strip them.
-    if (_selectedGroup != null) {
+    // can never strip them. Only the tags used by the library on screen can be
+    // offered — a chip for 'lanrepo' is dead weight in the GitHub library.
+    final availableGroups = <String>{
+      ...listedApps.expand((e) => e.app.groups),
+    }.toList()..sort((a, b) => _groupLabel(a).compareTo(_groupLabel(b)));
+    final activeGroup = availableGroups.contains(_selectedGroup)
+        ? _selectedGroup
+        : null;
+    if (activeGroup != null) {
       listedApps = listedApps
-          .where((a) => a.app.groups.contains(_selectedGroup))
+          .where((a) => a.app.groups.contains(activeGroup))
           .toList();
     }
 
@@ -1425,7 +1445,11 @@ class AppsPageState extends State<AppsPage> {
                   if (appsProvider.apps.isNotEmpty)
                     _getSearchBarSliver(context, settingsProvider, listedApps),
                   if (appsProvider.apps.isNotEmpty)
-                    _getGroupSwitcherSliver(context),
+                    _getGroupSwitcherSliver(
+                      context,
+                      availableGroups,
+                      activeGroup,
+                    ),
                   if (appsProvider.apps.isNotEmpty)
                     _getUpdateBannerSliver(
                       context,

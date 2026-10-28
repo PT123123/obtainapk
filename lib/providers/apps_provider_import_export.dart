@@ -250,14 +250,12 @@ extension AppsProviderImportExport on AppsProvider {
     // First pass: group ids are needed before the apps are merged, because
     // older builds stored the group tag inside [App.categories] and that
     // legacy tag has to be recognised (and moved out) for every app.
-    final List<Map<String, String>> groupMeta = [];
     final Set<String> groupIds = <String>{};
     for (final g in groups) {
       if (g is! Map) continue;
       final gid = g['id'] as String?;
       if (gid == null || gid.isEmpty) continue;
       groupIds.add(gid);
-      groupMeta.add({'id': gid, 'name': (g['name'] as String?) ?? gid});
     }
 
     // Second pass: collect every app and the full set of groups it belongs to.
@@ -444,9 +442,6 @@ extension AppsProviderImportExport on AppsProvider {
       await waitForAppsToLoad();
       await saveApps(toSave, onlyIfExists: false, reuseInstalledInfo: true);
     }
-    if (groupMeta.isNotEmpty) {
-      settingsProvider.groupedListGroups = groupMeta;
-    }
     return (
       added: added,
       updated: updated + adoptions.length,
@@ -532,14 +527,6 @@ extension AppsProviderImportExport on AppsProvider {
       );
     }
     if (plan.remove.isNotEmpty) await removeApps(plan.remove.toList());
-    final groupIds = {
-      for (final app in catalog.apps) ...app.groups,
-      for (final entry in apps.values) ...entry.app.groups,
-    };
-    settingsProvider.groupedListGroups = [
-      for (final id in groupIds)
-        {'id': id, 'name': id == 'repository' ? '仓库' : id},
-    ];
     settingsProvider.recordGroupedListSync(
       added: plan.added,
       updated: plan.updated,

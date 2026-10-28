@@ -426,38 +426,11 @@ class SettingsProvider with ChangeNotifier {
       getSettingString('selectedAppLibrary') == 'github' ? 'github' : 'lan';
 
   set selectedAppLibrary(String library) {
-    prefs?.setString('selectedAppLibrary', library == 'github' ? 'github' : 'lan');
+    prefs?.setString(
+      'selectedAppLibrary',
+      library == 'github' ? 'github' : 'lan',
+    );
     notifyListeners();
-  }
-
-  /// Metadata of the groups supplied by the repository catalog,
-  /// persisted so the group switcher can render chips without re-fetching.
-  /// Stored as a JSON list of `{'id': ..., 'name': ...}`.
-  List<Map<String, String>> get groupedListGroups {
-    final raw = getSettingString('groupedListGroups');
-    if (raw == null) return const [];
-    try {
-      final decoded = jsonDecode(raw) as List<dynamic>;
-      return decoded
-          .whereType<Map>()
-          .map(
-            (e) => {
-              'id': (e['id'] as String?) ?? '',
-              'name': (e['name'] as String?) ?? (e['id'] as String?) ?? '',
-            },
-          )
-          .where((e) => e['id']!.isNotEmpty)
-          .toList();
-    } catch (_) {
-      return const [];
-    }
-  }
-
-  set groupedListGroups(List<Map<String, String>> groups) {
-    prefs?.setString('groupedListGroups', jsonEncode(groups));
-    // Intentionally does NOT call notifyListeners(): this is written during the
-    // startup fetch, and the switcher re-reads it on the next rebuild triggered
-    // by the app store change anyway.
   }
 
   /// Base URL of the LAN F-Droid repository used while remote sources are off.

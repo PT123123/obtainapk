@@ -305,19 +305,33 @@ void main() {
   );
 
   test(
-    'manual apps stay manual even when their package is published',
+    'a published package takes over the hand-added row that tracked it remotely',
     () async {
       repo.packages = {'com.example.manual': _package('Repo name')};
       final plan = planCatalogMerge(await service.load(), [
         (app: _app('com.example.manual', managed: false), installed: false),
       ], {});
-      expect(plan.save.single.url, 'https://github.com/example/shared');
-      expect(plan.save.single.additionalSettings['repositoryManaged'], isFalse);
+      expect(plan.save.single.url, 'http://repo/?appId=com.example.manual');
+      expect(plan.save.single.overrideSource, 'FDroidRepo');
+      expect(plan.save.single.additionalSettings['repositoryManaged'], isTrue);
+      expect(plan.save.single.pinned, isTrue);
+    },
+  );
+
+  test(
+    'a manual app the repository does not publish keeps its own source',
+    () async {
+      repo.packages = {'com.example.other': _package('Other')};
+      final manual = _app('com.example.manual', managed: false);
+      final plan = planCatalogMerge(await service.load(), [
+        (app: manual, installed: false),
+      ], {});
+      expect(plan.save.map((app) => app.id), ['com.example.other']);
       expect(
         shouldRemoveCatalogApp(
-          plan.save.single,
+          manual,
           installed: false,
-          publishedIds: {},
+          publishedIds: {'com.example.other'},
         ),
         isFalse,
       );

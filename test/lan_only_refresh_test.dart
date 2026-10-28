@@ -73,14 +73,17 @@ class _Apps extends Fake implements AppsProvider {
   void notify() {}
 }
 
-App _app({bool legacyRemote = false}) => App(
+App _app({bool managed = false, bool legacyRemote = false}) => App(
   id: 'com.example.local',
   url: 'https://github.com/example/local',
   author: 'example',
   name: 'Local',
   latestVersion: '1.0',
   preferredApkIndex: 0,
-  additionalSettings: {'useRemoteSource': legacyRemote},
+  additionalSettings: {
+    'useRemoteSource': legacyRemote,
+    if (managed) 'repositoryManaged': true,
+  },
 );
 
 // Record every HTTP destination, refusing external traffic before it is sent.
@@ -137,27 +140,70 @@ void main() {
     );
   });
 
-  test(
-    'global switch overrides legacy app flags and invalid LAN addresses',
-    () {
-      for (final address in ['', 'http://127.0.0.1:8080', 'invalid-address']) {
-        for (final legacyRemote in [false, true]) {
-          expect(
-            NearSource(
-              _Settings(address),
-            ).isUsedFor(_app(legacyRemote: legacyRemote)),
-            isTrue,
-          );
-          expect(
-            NearSource(
-              _Settings(address, remoteEnabled: true),
-            ).isUsedFor(_app(legacyRemote: legacyRemote)),
-            isFalse,
-          );
-        }
+  test('repository rows stay on the LAN repo in both switch states', () {
+    for (final remoteEnabled in [false, true]) {
+      expect(
+        NearSource(
+          _Settings('http://127.0.0.1:8080', remoteEnabled: remoteEnabled),
+        ).isUsedFor(_app(managed: true)),
+        isTrue,
+      );
+    }
+  });
+
+  test('a GitHub row is never attributed to the LAN repo', () {
+    for (final address in ['', 'http://127.0.0.1:8080', 'invalid-address']) {
+      for (final legacyRemote in [false, true]) {
+        final app = _app(legacyRemote: legacyRemote);
+        expect(
+          NearSource(_Settings(address)).isUsedFor(app),
+          isFalse,
+          reason: 'switch off: $address, legacyRemote: $legacyRemote',
+        );
+        expect(
+          NearSource(_Settings(address, remoteEnabled: true)).isUsedFor(app),
+          isFalse,
+          reason: 'switch on: $address, legacyRemote: $legacyRemote',
+        );
       }
+    }
+  });
+
+  test(
+    'a GitHub row is skipped, not probed, while the source is off',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final app = _app();
+      final provider = _Apps(_Settings('http://127.0.0.1:${server.port}'), app);
+      final network = _LocalHttp();
+      await HttpOverrides.runWithHttpOverrides(
+        () async => expect(await provider.fetchUpdate(app.id), isNull),
+        network,
+      );
+      expect(network.requests, isEmpty);
     },
   );
+
+  test('the same row is checked remotely once the source is on', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final app = _app();
+    final provider = _Apps(
+      _Settings('http://127.0.0.1:${server.port}', remoteEnabled: true),
+      app,
+    );
+    final network = _LocalHttp();
+    await HttpOverrides.runWithHttpOverrides(
+      () async => expectLater(provider.fetchUpdate(app.id), throwsA(anything)),
+      network,
+    );
+    expect(
+      network.requests.any((url) => url.host != '127.0.0.1'),
+      isTrue,
+      reason: 'GitHub 源打开后必须走远端，而不是局域网仓库',
+    );
+  });
 
   test('LAN metadata and APK URLs come from the repository', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -207,7 +253,7 @@ void main() {
       request.response.write('{"packages":{}}');
       await request.response.close();
     });
-    final app = _app(legacyRemote: true);
+    final app = _app(managed: true, legacyRemote: true);
     final provider = _Apps(_Settings('http://127.0.0.1:${server.port}'), app);
     final network = _LocalHttp();
     await HttpOverrides.runWithHttpOverrides(() async {
@@ -230,7 +276,7 @@ void main() {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final address = 'http://127.0.0.1:${server.port}';
     await server.close(force: true);
-    final app = _app(legacyRemote: true);
+    final app = _app(managed: true, legacyRemote: true);
     final provider = _Apps(_Settings(address), app);
     final network = _LocalHttp();
     await HttpOverrides.runWithHttpOverrides(() async {
@@ -248,7 +294,7 @@ void main() {
       request.response.write('{"packages":{}}');
       await request.response.close();
     });
-    final app = _app().copyWith(
+    final app = _app(managed: true).copyWith(
       apkUrls: const [
         MapEntry(
           'old.apk',

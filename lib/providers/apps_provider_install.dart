@@ -166,6 +166,14 @@ extension AppsProviderInstall on AppsProvider {
       // Saved asset URLs can belong to the previously selected source. Resolve
       // LAN metadata here too, including direct downloads that skip install UI.
       final near = NearSource(settingsProvider);
+      if (!near.isUsedFor(app) && !settingsProvider.githubSourceEnabled) {
+        // Keeping the GitHub-source switch off must mean no GitHub traffic,
+        // not just no GitHub update checks.
+        throw ObtainiumError(
+          '${app.finalName} 不在局域网仓库中，只能从它声明的远端源下载。'
+          '请在设置中打开「打开 GitHub 源」。',
+        );
+      }
       if (near.isUsedFor(app)) {
         app = await fetchNearUpdate(app);
       }

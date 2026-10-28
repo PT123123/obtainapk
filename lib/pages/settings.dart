@@ -295,7 +295,9 @@ class _SettingsPageState extends State<SettingsPage> {
             onChanged: (value) => settingsProvider.githubSourceEnabled = value,
             helpWidgets: [
               const Text(
-                '打开后所有应用使用各自声明的远端网站源；关闭时所有应用仅从局域网仓库获取信息，缺包或连接失败不会回退到远端。',
+                '只影响不在局域网仓库中的应用：打开后它们按各自声明的远端网站源检查更新并下载，'
+                '关闭时下拉刷新会跳过它们（不会去局域网仓库找，也不会报错）。'
+                '仓库收录的应用始终从局域网仓库获取，与此开关无关。',
               ),
             ],
           ),
@@ -1386,11 +1388,11 @@ class _AppSourceSectionState extends State<_AppSourceSection> {
 
   String _statusLine(SettingsProvider settingsProvider) {
     if (settingsProvider.githubSourceEnabled) {
-      return '现在所有应用按各自声明的网站源检查更新。';
+      return '仓库收录的应用走近端仓库，其余应用按各自声明的网站源检查更新。';
     }
     final address = NearSource(settingsProvider).baseUrl;
-    return '现在所有应用优先走近端仓库：${address.isEmpty ? '通过 mDNS 自动发现' : address}\n'
-        '仓库没有收录的应用会自动回到它原来的更新源。';
+    return '仓库收录的应用走近端仓库：${address.isEmpty ? '通过 mDNS 自动发现' : address}\n'
+        'GitHub 源已关闭，仓库未收录的应用在刷新时直接跳过，不会去问局域网仓库。';
   }
 
   @override
@@ -1404,8 +1406,8 @@ class _AppSourceSectionState extends State<_AppSourceSection> {
         CardTile(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Text(
-            '更新检查和 APK 下载优先使用近端局域网仓库（lanpub serve 起的那个）；'
-            '仓库未收录的应用会自动使用它原来的更新源。',
+            '更新检查和 APK 下载按应用归属分流：局域网仓库（lanpub serve 起的那个）'
+            '收录的应用走仓库，其余应用在 GitHub 源打开时才检查。',
             style: captionStyle,
           ),
         ),

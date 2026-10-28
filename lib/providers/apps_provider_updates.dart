@@ -11,6 +11,14 @@ import 'package:obtainium/utils/min_update_age.dart';
 
 /// Update checking and pending-update bookkeeping for [AppsProvider].
 extension AppsProviderUpdates on AppsProvider {
+  /// Whether [app] has an enabled update source at all: repository rows always
+  /// come from the LAN index, GitHub rows only while the GitHub source is on.
+  /// A disabled source is skipped silently — the repository does not publish
+  /// those packages, so checking them there would only produce false errors.
+  static bool isCheckEnabledFor(App app, SettingsProvider settingsProvider) =>
+      NearSource(settingsProvider).isUsedFor(app) ||
+      settingsProvider.githubSourceEnabled;
+
   /// Fetches the latest [App] metadata from its source WITHOUT persisting it.
   /// Returns null if the app is missing or has a pending repo rename.
   ///
@@ -24,6 +32,9 @@ extension AppsProviderUpdates on AppsProvider {
       return null;
     }
     final SourceProvider sourceProvider = SourceProvider();
+    if (!isCheckEnabledFor(currentApp, settingsProvider)) {
+      return null;
+    }
     if (NearSource(settingsProvider).isUsedFor(currentApp)) {
       // The LAN repository is the selected update source. If it does not
       // contain this app, surface that fact instead of silently querying the
@@ -215,6 +226,13 @@ extension AppsProviderUpdates on AppsProvider {
           forceAll: forceAll,
         );
       }
+      // Drop apps whose source is switched off before they are queued, so the
+      // progress reflects the checks actually performed.
+      appIds = appIds.where((id) {
+        final app = apps[id]?.app;
+        return app != null &&
+            AppsProviderUpdates.isCheckEnabledFor(app, settingsProvider);
+      }).toList();
       total = appIds.length;
       final List<App> fetched = [];
       // Apps whose check failed: their check time is still advanced so the

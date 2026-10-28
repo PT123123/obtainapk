@@ -40,51 +40,75 @@ class RepositoryCatalogService {
 
   Future<RepositoryCatalog> load() async {
     final configuredUrl = settings.lanRepoUrl;
+    final cached = _readCache(configuredUrl);
+    final candidates = <String>{};
+    Object? lastError;
+
     try {
-      final base = await _resolveBaseUrl();
-      final apps = await _repo.getCatalogApps(base, {
-        'allowInsecure': true,
-        'lanRepoRequest': true,
-      });
-      final fetchedAt = DateTime.now();
-      final prefs = settings.prefs;
-      if (prefs == null) throw StateError('Settings have not been initialized');
-      final saved = await prefs.setString(
-        cacheKey,
-        jsonEncode({
-          'schemaVersion': 1,
-          'configuredUrl': configuredUrl,
-          'baseUrl': base,
-          'fetchedAt': fetchedAt.toIso8601String(),
-          'apps': apps.map((app) => app.toJson()).toList(),
-        }),
-      );
-      if (!saved) throw StateError('Failed to persist repository catalog');
-      return RepositoryCatalog(baseUrl: base, fetchedAt: fetchedAt, apps: apps);
+      candidates.add(await _resolveBaseUrl());
     } catch (error) {
+      lastError = error;
+    }
+    // Discovery can fail transiently while the last advertised LAN address is
+    // still reachable. Try that known endpoint before showing an old snapshot.
+    if (cached != null) candidates.add(cached.baseUrl);
+
+    for (final base in candidates) {
       try {
-        final raw = settings.prefs?.getString(cacheKey);
-        if (raw != null) {
-          final cache = jsonDecode(raw) as Map<String, dynamic>;
-          if (cache['schemaVersion'] == 1 &&
-              cache['configuredUrl'] == configuredUrl) {
-            return RepositoryCatalog(
-              baseUrl: cache['baseUrl'] as String,
-              fetchedAt: DateTime.parse(cache['fetchedAt'] as String),
-              apps: (cache['apps'] as List)
-                  .map(
-                    (app) =>
-                        App.fromJson(Map<String, dynamic>.from(app as Map)),
-                  )
-                  .toList(),
-              fromCache: true,
-            );
-          }
+        final apps = await _repo.getCatalogApps(base, {
+          'allowInsecure': true,
+          'lanRepoRequest': true,
+        });
+        final fetchedAt = DateTime.now();
+        final prefs = settings.prefs;
+        if (prefs == null) {
+          throw StateError('Settings have not been initialized');
         }
-      } catch (_) {
-        // A broken cache must not be treated as an empty authoritative list.
+        final saved = await prefs.setString(
+          cacheKey,
+          jsonEncode({
+            'schemaVersion': 1,
+            'configuredUrl': configuredUrl,
+            'baseUrl': base,
+            'fetchedAt': fetchedAt.toIso8601String(),
+            'apps': apps.map((app) => app.toJson()).toList(),
+          }),
+        );
+        if (!saved) throw StateError('Failed to persist repository catalog');
+        return RepositoryCatalog(
+          baseUrl: base,
+          fetchedAt: fetchedAt,
+          apps: apps,
+        );
+      } catch (error) {
+        lastError = error;
       }
-      throw ObtainiumError('无法获取仓库应用列表，且没有可用缓存：$error');
+    }
+
+    if (cached != null) return cached;
+    throw ObtainiumError('无法获取仓库应用列表，且没有可用缓存：$lastError');
+  }
+
+  RepositoryCatalog? _readCache(String configuredUrl) {
+    try {
+      final raw = settings.prefs?.getString(cacheKey);
+      if (raw == null) return null;
+      final cache = jsonDecode(raw) as Map<String, dynamic>;
+      if (cache['schemaVersion'] != 1 ||
+          cache['configuredUrl'] != configuredUrl) {
+        return null;
+      }
+      return RepositoryCatalog(
+        baseUrl: cache['baseUrl'] as String,
+        fetchedAt: DateTime.parse(cache['fetchedAt'] as String),
+        apps: (cache['apps'] as List)
+            .map((app) => App.fromJson(Map<String, dynamic>.from(app as Map)))
+            .toList(),
+        fromCache: true,
+      );
+    } catch (_) {
+      // A broken cache must not be treated as an empty authoritative list.
+      return null;
     }
   }
 }
@@ -146,9 +170,13 @@ CatalogMergePlan planCatalogMerge(
       plan.added++;
       continue;
     }
+    // The index owns every package it publishes: keeping a hand-added GitHub
+    // row for such a package would leave it updating from GitHub forever (that
+    // is how obtainAPK itself stayed in the GitHub library).
     final managed =
-        existing.additionalSettings['repositoryManaged'] as bool? ??
-        existing.groups.isNotEmpty;
+        published.contains(existing.id) ||
+        (existing.additionalSettings['repositoryManaged'] as bool? ??
+            existing.groups.isNotEmpty);
     plan.save.add(
       existing.copyWith(
         id: incoming.id,
